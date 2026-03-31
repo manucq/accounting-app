@@ -243,6 +243,61 @@ def calculate_totals():
 @app.route("/process-file", methods=["POST"])
 def process_file():
 
+    try:
+
+        # Verificar que llegó archivo
+        if "file" not in request.files:
+            return jsonify({"error": "file not received"}), 400
+
+        file = request.files["file"]
+
+        if file.filename == "":
+            return jsonify({"error": "empty filename"}), 400
+
+        # Guardar archivo con nombre simple (esto arregla iPhone)
+        filename = "upload.jpg"
+        path = os.path.join(UPLOAD_FOLDER, filename)
+
+        file.save(path)
+
+        # Leer texto con OCR
+        text = read_text_from_image(path)
+
+        # Extraer datos
+        data = extract_accounting_data(text)
+
+        amount = data["total"]
+
+        # Si no detecta monto, no guarda nada pero devuelve totales
+        if amount == 0:
+            income, expenses, profit, annual = calculate_totals()
+            return jsonify({
+                "income": float(income),
+                "expenses": float(expenses),
+                "profit": float(profit),
+                "annual": float(annual)
+            })
+
+        # Guardar ingreso o gasto
+        if "deposit" in text or "payment received" in text:
+            save_record(data, "Income")
+        else:
+            save_record(data, "Expense")
+
+        # Calcular totales actualizados
+        income, expenses, profit, annual = calculate_totals()
+
+        return jsonify({
+            "income": float(income),
+            "expenses": float(expenses),
+            "profit": float(profit),
+            "annual": float(annual)
+        })
+
+    except Exception as e:
+        print("ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
+
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"})
 
