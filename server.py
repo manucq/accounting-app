@@ -35,7 +35,7 @@ if not os.path.exists(EXCEL_FILE):
     df.to_excel(EXCEL_FILE, index=False)
 
 # ----------------------------------------------------
-# MEJORAR IMAGEN (RECIBOS TORCIDOS / POCA LUZ)
+# MEJORAR IMAGEN (FUNCIONA BIEN CON IPHONE)
 # ----------------------------------------------------
 
 def preprocess_image(path):
@@ -45,15 +45,11 @@ def preprocess_image(path):
     if img is None:
         return None
 
-    # mejorar calidad (muy importante para iPhone)
     img = cv2.resize(img, None, fx=1.5, fy=1.5)
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # quitar ruido
     gray = cv2.GaussianBlur(gray, (5,5), 0)
 
-    # mejorar contraste automáticamente
     gray = cv2.adaptiveThreshold(
         gray,
         255,
@@ -66,7 +62,7 @@ def preprocess_image(path):
     return gray
 
 # ----------------------------------------------------
-# OCR MÁS PRECISO
+# OCR
 # ----------------------------------------------------
 
 def read_receipt(path):
@@ -80,7 +76,7 @@ def read_receipt(path):
     return text.lower()
 
 # ----------------------------------------------------
-# EXTRAER MONTO AUTOMÁTICO
+# EXTRAER MONTO
 # ----------------------------------------------------
 
 def extract_amount(text):
@@ -93,7 +89,7 @@ def extract_amount(text):
     return max([float(x) for x in matches])
 
 # ----------------------------------------------------
-# DETECTAR TIENDA AUTOMÁTICO
+# DETECTAR TIENDA
 # ----------------------------------------------------
 
 def detect_store(text):
@@ -106,15 +102,13 @@ def detect_store(text):
         "bp",
         "walmart",
         "costco",
-        "amazon",
-        "harbor freight"
+        "amazon"
     ]
 
     for store in stores:
         if store in text:
             return store.title()
 
-    # primera línea suele ser la tienda
     lines = text.split("\n")
     for line in lines:
         line = line.strip()
@@ -124,15 +118,15 @@ def detect_store(text):
     return "Unknown Store"
 
 # ----------------------------------------------------
-# DETECTAR INGRESOS (DEPÓSITOS)
+# DETECTAR INGRESOS
 # ----------------------------------------------------
 
 def detect_income(text):
 
     keywords = [
         "deposit",
-        "direct deposit",
         "payment received",
+        "direct deposit",
         "zelle",
         "credited"
     ]
@@ -144,7 +138,7 @@ def detect_income(text):
     return False
 
 # ----------------------------------------------------
-# CLASIFICAR GASTOS AUTOMÁTICO
+# CLASIFICAR GASTOS
 # ----------------------------------------------------
 
 def classify_expense(text):
@@ -161,7 +155,7 @@ def classify_expense(text):
     return "Other Expense"
 
 # ----------------------------------------------------
-# GUARDAR EN EXCEL (SIN ERRORES)
+# GUARDAR EN EXCEL
 # ----------------------------------------------------
 
 def save_record(record_type, name, category, amount):
@@ -196,7 +190,7 @@ def calculate_totals():
     return income, expenses, profit, annual
 
 # ----------------------------------------------------
-# PROCESAR FOTO (RECIBO AUTOMÁTICO)
+# SUBIR FOTO
 # ----------------------------------------------------
 
 @app.route("/process-file", methods=["POST"])
@@ -222,11 +216,9 @@ def process_file():
             "annual": annual
         })
 
-    # ingreso automático
     if detect_income(text):
         save_record("Income","Client Payment","Income",amount)
 
-    # gasto automático
     else:
         store = detect_store(text)
         category = classify_expense(text)
@@ -250,10 +242,8 @@ def download():
     return send_file(EXCEL_FILE, as_attachment=True)
 
 # ----------------------------------------------------
-# RENDER SERVER
+# SERVIDOR RENDER
 # ----------------------------------------------------
-
-import os
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
