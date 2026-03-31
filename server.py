@@ -24,8 +24,15 @@ def get_local_ip():
 # Ruta principal
 # -----------------------------------------
 @app.route("/")
+def home():
+    return redirect("/login")
+
+
 @app.route("/dashboard")
 def dashboard():
+
+    if "logged" not in session:
+        return redirect("/login")
     return """
     <html>
     <head>
