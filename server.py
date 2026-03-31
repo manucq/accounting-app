@@ -1,18 +1,9 @@
-from flask import Flask, request, jsonify, send_file, redirect, url_for, session
+from flask import Flask, request, jsonify, send_file, redirect, session
 from flask_cors import CORS
 import pandas as pd
 import sqlite3
 
 app = Flask(__name__)
-def init_db():
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS transactions (description TEXT, amount REAL)")
-    conn.commit()
-    conn.close()
-
-init_db()
-CORS(app)
 app.secret_key = "accounting_secret_key_2026"
 
 # -----------------------------------------
