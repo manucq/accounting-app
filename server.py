@@ -46,7 +46,7 @@ def dashboard():
 
             .container {
                 padding: 20px;
-                max-width: 1000px;
+                max-width: 1100px;
                 margin: auto;
             }
 
@@ -65,18 +65,8 @@ def dashboard():
                 font-weight: bold;
             }
 
-            .income {
-                background: #2ecc71;
-            }
-
-            .expense {
-                background: #e74c3c;
-            }
-
-            .card-title {
-                font-size: 16px;
-                opacity: 0.8;
-            }
+            .income { background: #2ecc71; }
+            .expense { background: #e74c3c; }
 
             .upload {
                 background: white;
@@ -97,8 +87,24 @@ def dashboard():
                 margin-top: 10px;
             }
 
-            button:hover {
-                background: #27ae60;
+            table {
+                width: 100%;
+                margin-top: 20px;
+                border-collapse: collapse;
+                background: white;
+                border-radius: 12px;
+                overflow: hidden;
+            }
+
+            th {
+                background: #2c3e50;
+                color: white;
+                padding: 12px;
+            }
+
+            td {
+                padding: 10px;
+                border-bottom: 1px solid #eee;
             }
 
             canvas {
@@ -122,12 +128,12 @@ def dashboard():
 
             <div class="cards">
                 <div class="card income">
-                    <div class="card-title">Total Income</div>
+                    Total Income
                     <div id="income">$0</div>
                 </div>
 
                 <div class="card expense">
-                    <div class="card-title">Total Expenses</div>
+                    Total Expenses
                     <div id="expenses">$0</div>
                 </div>
             </div>
@@ -136,10 +142,23 @@ def dashboard():
                 <h3>Upload Excel File</h3>
                 <input type="file" id="fileInput">
                 <br>
-                <button onclick="upload()">Upload and Calculate</button>
+                <button onclick="upload()">Upload and Process</button>
             </div>
 
+            <button onclick="download()">Download Excel Report</button>
+
             <canvas id="chart"></canvas>
+
+            <table id="table">
+                <thead>
+                    <tr>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
 
         </div>
 
@@ -178,6 +197,10 @@ def dashboard():
 
             });
 
+        }
+
+        function download() {
+            window.location.href = "/download";
         }
 
         </script>
