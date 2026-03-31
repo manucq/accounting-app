@@ -151,9 +151,13 @@ async function uploadFile() {
     formData.append("file", fileInput.files[0]);
 
     const response = await fetch("/process-file", {
-        method: "POST",
-        body: formData
-    });
+    method: "POST",
+    body: formData
+});
+
+const text = await response.text();
+console.log(text);
+alert(text);
 
     const data = await response.json();
 
