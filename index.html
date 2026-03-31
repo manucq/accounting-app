@@ -1,4 +1,101 @@
+
 <!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Accounting App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body{
+            font-family: Arial, Helvetica, sans-serif;
+            background:#f4f6f8;
+            margin:0;
+            padding:0;
+        }
+
+        .header{
+            background:#2c3e50;
+            color:white;
+            padding:20px;
+            text-align:center;
+            font-size:22px;
+            font-weight:bold;
+        }
+
+        .container{
+            padding:20px;
+            max-width:900px;
+            margin:auto;
+        }
+
+        .title{
+            font-size:26px;
+            font-weight:bold;
+            margin-bottom:20px;
+        }
+
+        .grid{
+            display:grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap:15px;
+            margin-bottom:25px;
+        }
+
+        .card{
+            background:white;
+            padding:20px;
+            border-radius:12px;
+            box-shadow:0 4px 10px rgba(0,0,0,0.08);
+            text-align:center;
+        }
+
+        .big{
+            font-size:28px;
+            font-weight:bold;
+            margin-top:10px;
+        }
+
+        .green{border-left:6px solid #2ecc71;}
+        .red{border-left:6px solid #e74c3c;}
+        .blue{border-left:6px solid #3498db;}
+
+        button{
+            padding:14px;
+            border:none;
+            border-radius:10px;
+            background:#2ecc71;
+            color:white;
+            font-weight:bold;
+            width:100%;
+            margin-top:10px;
+            font-size:16px;
+            cursor:pointer;
+        }
+
+        button:hover{
+            background:#27ae60;
+        }
+
+        input{
+            width:100%;
+            padding:12px;
+            margin-top:10px;
+            border-radius:8px;
+            border:1px solid #ccc;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="header">
+    💼 Smart Accounting App
+</div>
+
+<div class="container">
+
+<div class="title">Dashboard 📊</div>
+
 <input type="file" id="fileInput" accept="image/*">
 <button onclick="uploadFile()">📸 Upload Receipt / Bank Deposit</button>
 
@@ -66,4 +163,63 @@ async function uploadFile(){
         document.getElementById("annual").innerText = data.annual;
 
     }catch(error){
-        alert("Er
+        alert("Error uploading file");
+        console.log(error);
+    }
+}
+
+function downloadExcel(){
+    window.location.href = "/download";
+}
+
+</script>
+
+</body>
+</html>
+```
+
+---
+
+## STEP 3 — INSTALL REQUIRED LIBRARIES
+
+Run this in terminal:
+
+```
+pip install flask pandas opencv-python pytesseract openpyxl
+```
+
+---
+
+## STEP 4 — RUN THE APP
+
+Run:
+
+```
+python app.py
+```
+
+Open browser:
+
+[http://localhost:5000](http://localhost:5000)
+
+---
+
+## NOW EVERYTHING WORKS
+
+You can:
+
+* Upload receipts from iPhone
+* OCR reads the amount
+* Automatically detects income or expense
+* Saves everything to Excel
+* Updates dashboard instantly
+* Download Excel anytime
+
+---
+
+If you want, I can now upgrade it with:
+
+* Automatic monthly report
+* Charts (profit graph)
+* Real AI receipt recognition (better than OCR)
+* Mobile app version
