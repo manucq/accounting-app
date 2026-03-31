@@ -2,6 +2,36 @@ from flask import Flask, request, jsonify, send_file, redirect, session
 from flask_cors import CORS
 import pandas as pd
 import sqlite3
+def create_users_table():
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            password TEXT
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+create_users_table()
+def create_default_user():
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM users WHERE username='admin'")
+    user = c.fetchone()
+
+    if not user:
+        c.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", "1234"))
+
+    conn.commit()
+    conn.close()
+
+create_default_user()
 
 app = Flask(__name__)
 app.secret_key = "secret123"
@@ -340,27 +370,87 @@ def get_qr():
 @app.route("/login")
 def login():
     return """
-    <h2>Login</h2>
+    <html>
+    <head>
+        <style>
+            body {
+                background: #f4f6f8;
+                font-family: Arial;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+            }
 
-    <form method="POST" action="/login-check">
-        <input type="text" name="user" placeholder="Username"><br><br>
-        <input type="password" name="password" placeholder="Password"><br><br>
+            .login-box {
+                background: white;
+                padding: 30px;
+                border-radius: 12px;
+                box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
+                width: 300px;
+                text-align: center;
+            }
 
-        <button type="submit">Login</button>
-    </form>
+            input {
+                width: 100%;
+                padding: 10px;
+                margin-top: 10px;
+                border-radius: 6px;
+                border: 1px solid #ccc;
+            }
+
+            button {
+                width: 100%;
+                padding: 12px;
+                margin-top: 15px;
+                background: #2ecc71;
+                border: none;
+                color: white;
+                font-size: 16px;
+                border-radius: 8px;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="login-box">
+            <h2>Login</h2>
+
+            <form method="POST" action="/login-check">
+                <input type="text" name="user" placeholder="Username">
+                <input type="password" name="password" placeholder="Password">
+                <button type="submit">Entrar</button>
+            </form>
+        </div>
+    </body>
+    </html>
     """
 
+@app.route("/login-check", methods=["POST"])
 @app.route("/login-check", methods=["POST"])
 def login_check():
 
     user = request.form["user"]
     password = request.form["password"]
 
-    if user == "admin" and password == "1234":
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM users WHERE username=? AND password=?", (user, password))
+    result = c.fetchone()
+
+    conn.close()
+
+    if result:
         session["logged"] = True
+        session["user"] = user
         return redirect("/dashboard")
 
     return "Login incorrect"
+    @app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
 
 
 if __name__ == "__main__":
