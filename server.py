@@ -4,7 +4,7 @@ import pandas as pd
 import sqlite3
 
 app = Flask(__name__)
-app.secret_key = "accounting_secret_key_2026"
+app.secret_key = "secret123"
 
 # -----------------------------------------
 # Obtener IP local automáticamente
@@ -332,7 +332,7 @@ def get_qr():
 # -----------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-    @app.route("/login")
+   @app.route("/login")
 def login():
     return """
     <h2>Login</h2>
@@ -344,7 +344,6 @@ def login():
         <button type="submit">Login</button>
     </form>
     """
-
 
 @app.route("/login-check", methods=["POST"])
 def login_check():
