@@ -103,7 +103,7 @@ canvas {
 <div class="container">
 
 <div class="upload-box">
-    <input type="file" id="fileInput">
+    <input type="file" id="fileInput" accept="image/*,.pdf">
     <button onclick="uploadFile()">Upload Receipt / Invoice</button>
     <button onclick="downloadExcel()">Download Excel</button>
 </div>
@@ -140,6 +140,7 @@ canvas {
 <script>
 
 async function uploadFile() {
+
     const fileInput = document.getElementById("fileInput");
 
     if(fileInput.files.length === 0) {
@@ -150,22 +151,31 @@ async function uploadFile() {
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
 
-    const response = await fetch("/process-file", {
-    method: "POST",
-    body: formData
-});
+    try {
 
-const text = await response.text();
-console.log(text);
-alert(text);
+        const response = await fetch("/process-file", {
+            method: "POST",
+            body: formData
+        });
 
-    const data = await response.json();
+        const data = await response.json();
 
-    updateCards(data);
-    loadMonthlyReport();
+        if(data.error){
+            alert("Error: " + data.error);
+            return;
+        }
+
+        updateCards(data);
+        loadMonthlyReport();
+
+    } catch (error) {
+        alert("Upload failed");
+        console.log(error);
+    }
 }
 
 function updateCards(data) {
+
     document.getElementById("income").innerText = "$" + data.income.toFixed(2);
     document.getElementById("expenses").innerText = "$" + data.expenses.toFixed(2);
     document.getElementById("profit").innerText = "$" + data.profit.toFixed(2);
@@ -200,6 +210,8 @@ async function loadMonthlyReport() {
 
     const response = await fetch("/monthly-report");
     const data = await response.json();
+
+    if(data.length === 0) return;
 
     const labels = data.map(d => d.Month);
     const values = data.map(d => d.Amount);
