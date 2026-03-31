@@ -1,9 +1,19 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, redirect, url_for, session
 from flask_cors import CORS
 import pandas as pd
+import sqlite3
 
 app = Flask(__name__)
+def init_db():
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS transactions (description TEXT, amount REAL)")
+    conn.commit()
+    conn.close()
+
+init_db()
 CORS(app)
+app.secret_key = "accounting_secret_key_2026"
 
 # -----------------------------------------
 # Obtener IP local automáticamente
@@ -331,3 +341,28 @@ def get_qr():
 # -----------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+    @app.route("/login")
+def login():
+    return """
+    <h2>Login</h2>
+
+    <form method="POST" action="/login-check">
+        <input type="text" name="user" placeholder="Username"><br><br>
+        <input type="password" name="password" placeholder="Password"><br><br>
+
+        <button type="submit">Login</button>
+    </form>
+    """
+
+
+@app.route("/login-check", methods=["POST"])
+def login_check():
+
+    user = request.form["user"]
+    password = request.form["password"]
+
+    if user == "admin" and password == "1234":
+        session["logged"] = True
+        return redirect("/dashboard")
+
+    return "Login incorrect"
