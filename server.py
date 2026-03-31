@@ -332,27 +332,6 @@ def get_qr():
 # -----------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-   @app.route("/login")
+  @app.route("/login")
 def login():
-    return """
-    <h2>Login</h2>
-
-    <form method="POST" action="/login-check">
-        <input type="text" name="user" placeholder="Username"><br><br>
-        <input type="password" name="password" placeholder="Password"><br><br>
-
-        <button type="submit">Login</button>
-    </form>
-    """
-
-@app.route("/login-check", methods=["POST"])
-def login_check():
-
-    user = request.form["user"]
-    password = request.form["password"]
-
-    if user == "admin" and password == "1234":
-        session["logged"] = True
-        return redirect("/dashboard")
-
-    return "Login incorrect"
+    return "LOGIN FUNCIONA"
