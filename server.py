@@ -18,7 +18,7 @@ MATERIALS_FILE = "learned_materials.txt"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # ----------------------------------------------------
-# CREAR ARCHIVOS DE APRENDIZAJE SI NO EXISTEN
+# CREAR ARCHIVOS SI NO EXISTEN
 # ----------------------------------------------------
 
 for f in [STORES_FILE, TOOLS_FILE, MATERIALS_FILE]:
@@ -40,12 +40,16 @@ if not os.path.exists(EXCEL_FILE):
     df.to_excel(EXCEL_FILE, index=False)
 
 # ----------------------------------------------------
-# LEER TEXTO (OCR)
+# OCR (LEE EL TEXTO DE LA FOTO)
 # ----------------------------------------------------
 
 def read_text(path):
 
     img = cv2.imread(path)
+
+    if img is None:
+        return ""
+
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray,(5,5),0)
     gray = cv2.threshold(gray,150,255,cv2.THRESH_BINARY)[1]
@@ -67,19 +71,19 @@ def extract_amount(text):
     return 0
 
 # ----------------------------------------------------
-# CARGAR APRENDIZAJE
+# CARGAR PALABRAS APRENDIDAS
 # ----------------------------------------------------
 
 def load_words(file):
     with open(file,"r") as f:
-        return [line.strip() for line in f.readlines()]
+        return [line.strip() for line in f.readlines() if line.strip()]
 
 def save_word(file, word):
     with open(file,"a") as f:
-        f.write(word + "\n")
+        f.write(word.lower() + "\n")
 
 # ----------------------------------------------------
-# DETECTAR TIENDA (con aprendizaje)
+# DETECTAR TIENDA (APRENDIZAJE AUTOMÁTICO)
 # ----------------------------------------------------
 
 def detect_store(text):
@@ -90,19 +94,19 @@ def detect_store(text):
         if store in text:
             return store.title()
 
-    # detectar nueva tienda (primera línea del recibo normalmente)
+    # detectar nueva tienda automáticamente
     lines = text.split("\n")
-    if len(lines) > 0:
-        possible_store = lines[0].strip()
 
-        if len(possible_store) > 3:
-            save_word(STORES_FILE, possible_store)
-            return possible_store.title()
+    for line in lines:
+        line = line.strip()
+        if len(line) > 3:
+            save_word(STORES_FILE, line)
+            return line.title()
 
     return "Unknown Store"
 
 # ----------------------------------------------------
-# DETECTAR MATERIALES (con aprendizaje)
+# DETECTAR MATERIAL
 # ----------------------------------------------------
 
 def detect_material(text):
@@ -123,7 +127,7 @@ def detect_material(text):
     return False
 
 # ----------------------------------------------------
-# DETECTAR TOOLS (con aprendizaje)
+# DETECTAR TOOLS
 # ----------------------------------------------------
 
 def detect_tools(text):
@@ -149,7 +153,7 @@ def detect_tools(text):
 
 def detect_income(text):
 
-    keywords = ["deposit","payment received","zelle","credited"]
+    keywords = ["deposit","payment received","zelle","credited","direct deposit"]
 
     for k in keywords:
         if k in text:
@@ -161,7 +165,7 @@ def detect_income(text):
 # CLASIFICAR AUTOMÁTICO
 # ----------------------------------------------------
 
-def classify(text, store):
+def classify(text):
 
     if detect_material(text):
         return "Materials"
@@ -175,22 +179,22 @@ def classify(text, store):
     return "Other Expense"
 
 # ----------------------------------------------------
-# GUARDAR EN EXCEL
+# GUARDAR EN EXCEL (CORREGIDO)
 # ----------------------------------------------------
 
 def save_record(record_type, name, category, amount):
 
     df = pd.read_excel(EXCEL_FILE)
 
-    new_row = {
+    new_row = pd.DataFrame([{
         "Date": datetime.now().strftime("%Y-%m-%d"),
         "Type": record_type,
         "Client/Store": name,
         "Category": category,
         "Amount": amount
-    }
+    }])
 
-    df = df.append(new_row, ignore_index=True)
+    df = pd.concat([df, new_row], ignore_index=True)
     df.to_excel(EXCEL_FILE, index=False)
 
 # ----------------------------------------------------
@@ -216,6 +220,9 @@ def calculate_totals():
 @app.route("/process-file", methods=["POST"])
 def process_file():
 
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"})
+
     file = request.files["file"]
 
     path = os.path.join(UPLOAD_FOLDER, file.filename)
@@ -224,6 +231,7 @@ def process_file():
     text = read_text(path)
     amount = extract_amount(text)
 
+    # si no detecta monto solo devuelve totales
     if amount == 0:
         income, expenses, profit, annual = calculate_totals()
         return jsonify({
@@ -233,13 +241,14 @@ def process_file():
             "annual": annual
         })
 
-    # ingreso
+    # INGRESO
     if detect_income(text):
         save_record("Income","Client Payment","Income",amount)
 
+    # GASTO
     else:
         store = detect_store(text)
-        category = classify(text, store)
+        category = classify(text)
         save_record("Expense",store,category,amount)
 
     income, expenses, profit, annual = calculate_totals()
@@ -264,4 +273,4 @@ def download():
 # ----------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
