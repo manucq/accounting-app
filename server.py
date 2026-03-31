@@ -29,49 +29,100 @@ def dashboard():
     <html>
     <head>
         <title>Accounting Dashboard</title>
+
         <style>
             body {
                 font-family: Arial;
-                background: #f5f6fa;
+                background: #f4f6f8;
                 margin: 0;
                 padding: 20px;
             }
-            .card {
-                background: white;
-                padding: 20px;
-                border-radius: 10px;
-                margin-bottom: 20px;
-                box-shadow: 0px 3px 10px rgba(0,0,0,0.1);
-            }
+
             h1 {
                 color: #2c3e50;
             }
-            .income { color: green; font-size: 24px; }
-            .expense { color: red; font-size: 24px; }
+
+            .container {
+                max-width: 900px;
+                margin: auto;
+            }
+
+            .cards {
+                display: flex;
+                gap: 20px;
+                flex-wrap: wrap;
+            }
+
+            .card {
+                flex: 1;
+                background: white;
+                padding: 20px;
+                border-radius: 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            }
+
+            .income { color: green; font-size: 28px; font-weight: bold; }
+            .expense { color: red; font-size: 28px; font-weight: bold; }
+
+            button {
+                background: #2ecc71;
+                color: white;
+                border: none;
+                padding: 12px 18px;
+                border-radius: 8px;
+                font-size: 16px;
+                cursor: pointer;
+                margin-top: 10px;
+            }
+
+            button:hover {
+                background: #27ae60;
+            }
+
+            canvas {
+                margin-top: 20px;
+            }
         </style>
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     </head>
 
     <body>
 
-    <h1>📊 Accounting Dashboard</h1>
+    <div class="container">
 
-    <div class="card">
-        <h3>Total Income</h3>
-        <div class="income">$0</div>
-    </div>
+        <h1>💼 Accounting Dashboard</h1>
 
-    <div class="card">
-        <h3>Total Expenses</h3>
-        <div class="expense">$0</div>
-    </div>
+        <div class="cards">
+            <div class="card">
+                <h3>Total Income</h3>
+                <div class="income" id="income">$0</div>
+            </div>
 
-    <div class="card">
-        <h3>Upload File</h3>
-        <input type="file" id="fileInput">
-        <button onclick="upload()">Upload</button>
+            <div class="card">
+                <h3>Total Expenses</h3>
+                <div class="expense" id="expenses">$0</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Upload Excel File</h3>
+            <input type="file" id="fileInput">
+            <br>
+            <button onclick="upload()">Upload and Calculate</button>
+        </div>
+
+        <div class="card">
+            <h3>Income vs Expenses</h3>
+            <canvas id="chart"></canvas>
+        </div>
+
     </div>
 
     <script>
+
+        let chart;
+
         function upload() {
             let file = document.getElementById("fileInput").files[0];
 
@@ -82,12 +133,26 @@ def dashboard():
                 method: "POST",
                 body: formData
             })
-            .then(response => response.json())
+            .then(res => res.json())
             .then(data => {
-                document.querySelector(".income").innerText = "$" + data.income;
-                document.querySelector(".expense").innerText = "$" + data.expenses;
+
+                document.getElementById("income").innerText = "$" + data.income;
+                document.getElementById("expenses").innerText = "$" + data.expenses;
+
+                if(chart) chart.destroy();
+
+                chart = new Chart(document.getElementById("chart"), {
+                    type: "bar",
+                    data: {
+                        labels: ["Income", "Expenses"],
+                        datasets: [{
+                            data: [data.income, data.expenses]
+                        }]
+                    }
+                });
             });
         }
+
     </script>
 
     </body>
