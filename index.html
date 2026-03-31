@@ -196,6 +196,8 @@ function openCamera(){
 
 /* AUTO SCAN */
 
+let scanning = false;
+
 function autoScan(){
 
     const video = document.getElementById("video");
@@ -203,11 +205,37 @@ function autoScan(){
 
     setInterval(()=>{
 
+        if(scanning) return;
+
+        if(video.videoWidth === 0) return;
+
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
 
         const ctx = canvas.getContext("2d");
         ctx.drawImage(video,0,0);
+
+        // verificar si hay texto (imagen no vacía)
+        const imageData = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+
+        let pixelsWithInk = 0;
+
+        for(let i = 0; i < imageData.length; i += 4){
+            const r = imageData[i];
+            const g = imageData[i+1];
+            const b = imageData[i+2];
+
+            if(r < 200 || g < 200 || b < 200){
+                pixelsWithInk++;
+            }
+        }
+
+        // si no hay suficiente texto en la imagen → no escanea
+        if(pixelsWithInk < 15000){
+            return;
+        }
+
+        scanning = true;
 
         canvas.toBlob(blob=>{
 
@@ -221,22 +249,17 @@ function autoScan(){
             .then(res=>res.json())
             .then(data=>{
 
-                if(data.income){
-                    document.getElementById("income").innerText = data.income;
-                }
-
-                if(data.expenses){
-                    document.getElementById("expenses").innerText = data.expenses;
-                }
-
+                document.getElementById("income").innerText = data.income;
+                document.getElementById("expenses").innerText = data.expenses;
                 document.getElementById("profit").innerText = data.profit;
                 document.getElementById("annual").innerText = data.annual;
 
+                scanning = false;
             });
 
         });
 
-    },3000);
+    },2500);
 }
 
 </script>
