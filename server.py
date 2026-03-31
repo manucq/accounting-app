@@ -182,30 +182,45 @@ def process_files():
     for _, row in df.iterrows():
 
         text = str(row).lower()
-
         amount = float(row["Amount"])
 
         if "income" in text:
             income += amount
-
         else:
             expenses += amount
 
         if "gas" in text or "fuel" in text:
             fuel += amount
 
-        if "material" in text or "home depot" in text or "lowes" in text:
+        if "home depot" in text or "lowes" in text or "material" in text:
             materials += amount
 
         if "tool" in text or "drill" in text or "saw" in text:
             tools += amount
+
+    # -----------------------------
+    # CREAR ARCHIVO POR MES
+    # -----------------------------
+    month = pd.Timestamp.now().strftime("%B")
+    file_name = f"{month}.xlsx"
+
+    with pd.ExcelWriter(file_name, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Transactions")
+
+        summary = pd.DataFrame({
+            "Category": ["Income", "Expenses", "Fuel", "Materials", "Tools"],
+            "Total": [income, expenses, fuel, materials, tools]
+        })
+
+        summary.to_excel(writer, index=False, sheet_name="Summary")
 
     return jsonify({
         "income": income,
         "expenses": expenses,
         "fuel": fuel,
         "materials": materials,
-        "tools": tools
+        "tools": tools,
+        "file": file_name
     })
 # -----------------------------------------
 # Mostrar IP para abrir desde el celular
