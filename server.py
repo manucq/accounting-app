@@ -23,6 +23,76 @@ def get_local_ip():
 # Ruta principal
 # -----------------------------------------
 @app.route("/")
+@app.route("/dashboard")
+def dashboard():
+    return """
+    <html>
+    <head>
+        <title>Accounting Dashboard</title>
+        <style>
+            body {
+                font-family: Arial;
+                background: #f5f6fa;
+                margin: 0;
+                padding: 20px;
+            }
+            .card {
+                background: white;
+                padding: 20px;
+                border-radius: 10px;
+                margin-bottom: 20px;
+                box-shadow: 0px 3px 10px rgba(0,0,0,0.1);
+            }
+            h1 {
+                color: #2c3e50;
+            }
+            .income { color: green; font-size: 24px; }
+            .expense { color: red; font-size: 24px; }
+        </style>
+    </head>
+
+    <body>
+
+    <h1>📊 Accounting Dashboard</h1>
+
+    <div class="card">
+        <h3>Total Income</h3>
+        <div class="income">$0</div>
+    </div>
+
+    <div class="card">
+        <h3>Total Expenses</h3>
+        <div class="expense">$0</div>
+    </div>
+
+    <div class="card">
+        <h3>Upload File</h3>
+        <input type="file" id="fileInput">
+        <button onclick="upload()">Upload</button>
+    </div>
+
+    <script>
+        function upload() {
+            let file = document.getElementById("fileInput").files[0];
+
+            let formData = new FormData();
+            formData.append("file", file);
+
+            fetch("/process", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.querySelector(".income").innerText = "$" + data.income;
+                document.querySelector(".expense").innerText = "$" + data.expenses;
+            });
+        }
+    </script>
+
+    </body>
+    </html>
+    """
 def home():
     return open("index.html", "r", encoding="utf-8").read()
 
