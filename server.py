@@ -19,7 +19,7 @@ EXCEL_FILE = "accounting_data.xlsx"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # ----------------------------------------------------
-# TESSERACT (WINDOWS + RENDER)
+# TESSERACT CONFIG (WINDOWS + RENDER)
 # ----------------------------------------------------
 
 if platform.system() == "Windows":
@@ -28,22 +28,27 @@ else:
     pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 # ----------------------------------------------------
-# CREATE EXCEL FILE IF NOT EXISTS
+# CREATE EXCEL FILE (IF NOT EXISTS)
 # ----------------------------------------------------
 
 if not os.path.exists(EXCEL_FILE):
+
     df = pd.DataFrame(columns=[
         "Date",
+        "Month",
         "Type",
         "Client / Store",
         "Invoice Number",
         "Category",
+        "Subtotal",
+        "Tax",
         "Amount"
     ])
+
     df.to_excel(EXCEL_FILE, index=False)
 
 # ----------------------------------------------------
-# SERVE HTML
+# HOME PAGE
 # ----------------------------------------------------
 
 @app.route("/")
@@ -51,7 +56,7 @@ def home():
     return send_from_directory(".", "index.html")
 
 # ----------------------------------------------------
-# IMAGE PREPROCESSING (OPTIMIZADO PARA CELULAR)
+# IMAGE PREPROCESSING (OPTIMIZED FOR MOBILE)
 # ----------------------------------------------------
 
 def preprocess_image(path):
@@ -59,10 +64,9 @@ def preprocess_image(path):
     img = cv2.imread(path)
 
     if img is None:
-        print("ERROR: imagen no cargó")
         return None
 
-    # reducir tamaño (esto evita que Render se quede sin memoria)
+    # Reduce size to avoid memory crash (Render fix)
     img = cv2.resize(img, (1000, 1200))
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -84,7 +88,7 @@ def preprocess_image(path):
 # OCR
 # ----------------------------------------------------
 
-def read_receipt(path):
+def read_text_from_image(path):
 
     processed = preprocess_image(path)
 
@@ -95,36 +99,25 @@ def read_receipt(path):
     return text.lower()
 
 # ----------------------------------------------------
-# EXTRACT AMOUNT
+# SMART EXTRACTION (PRO LEVEL)
 # ----------------------------------------------------
 
-def extract_amount(text):
-
-    matches = re.findall(r"\d+\.\d{2}", text)
-
-    if not matches:
-        return 0
-
-    return max([float(x) for x in matches])
-
-# ----------------------------------------------------
-# EXTRACT INVOICE DATA (NUEVO)
-# ----------------------------------------------------
-
-def extract_invoice_data(text):
+def extract_accounting_data(text):
 
     data = {
-        "date": "",
+        "date": datetime.now().strftime("%Y-%m-%d"),
         "client": "",
         "invoice": "",
-        "amount": 0
+        "subtotal": 0,
+        "tax": 0,
+        "total": 0
     }
 
     # DATE
     date_patterns = [
         r"\d{2}/\d{2}/\d{4}",
-        r"\d{2}-\d{2}-\d{4}",
-        r"\d{4}-\d{2}-\d{2}"
+        r"\d{4}-\d{2}-\d{2}",
+        r"\d{2}-\d{2}-\d{4}"
     ]
 
     for pattern in date_patterns:
@@ -134,87 +127,44 @@ def extract_invoice_data(text):
             break
 
     # INVOICE NUMBER
-    invoice_patterns = [
-        r"invoice\s*#?\s*(\w+)",
-        r"invoice\s*no\.?\s*(\w+)",
-        r"inv\s*#?\s*(\w+)"
-    ]
+    inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
+    if inv:
+        data["invoice"] = inv.group(2)
 
-    for pattern in invoice_patterns:
-        match = re.search(pattern, text)
-        if match:
-            data["invoice"] = match.group(1)
-            break
+    # SUBTOTAL
+    sub = re.search(r"subtotal\s*\$?\s*(\d+\.\d{2})", text)
+    if sub:
+        data["subtotal"] = float(sub.group(1))
 
-    # AMOUNT
-    amounts = re.findall(r"\d+\.\d{2}", text)
-    if amounts:
-        data["amount"] = max([float(x) for x in amounts])
+    # TAX
+    tax = re.search(r"(tax|vat)\s*\$?\s*(\d+\.\d{2})", text)
+    if tax:
+        data["tax"] = float(tax.group(2))
 
-    # CLIENT NAME (primeras líneas del texto)
+    # TOTAL
+    total = re.search(r"(total|amount due)\s*\$?\s*(\d+\.\d{2})", text)
+    if total:
+        data["total"] = float(total.group(2))
+    else:
+        amounts = re.findall(r"\d+\.\d{2}", text)
+        if amounts:
+            data["total"] = max([float(x) for x in amounts])
+
+    # CLIENT NAME (first valid line)
     lines = text.split("\n")
 
     for line in lines[:10]:
         line = line.strip()
 
         if len(line) > 4 and len(line) < 40:
-            if not any(x in line for x in ["invoice", "date", "total", "amount", "tax"]):
+            if not any(x in line.lower() for x in ["invoice","total","date","tax","receipt"]):
                 data["client"] = line.title()
                 break
 
     return data
 
 # ----------------------------------------------------
-# DETECT STORE
-# ----------------------------------------------------
-
-def detect_store(text):
-
-    stores = [
-        "home depot",
-        "lowes",
-        "shell",
-        "exxon",
-        "bp",
-        "walmart",
-        "costco",
-        "amazon"
-    ]
-
-    for store in stores:
-        if store in text:
-            return store.title()
-
-    lines = text.split("\n")
-    for line in lines:
-        line = line.strip()
-        if len(line) > 3:
-            return line.title()
-
-    return "Unknown Store"
-
-# ----------------------------------------------------
-# DETECT INCOME
-# ----------------------------------------------------
-
-def detect_income(text):
-
-    keywords = [
-        "deposit",
-        "payment received",
-        "direct deposit",
-        "zelle",
-        "credited"
-    ]
-
-    for k in keywords:
-        if k in text:
-            return True
-
-    return False
-
-# ----------------------------------------------------
-# CLASSIFY EXPENSE
+# AUTO EXPENSE CLASSIFICATION
 # ----------------------------------------------------
 
 def classify_expense(text):
@@ -222,36 +172,56 @@ def classify_expense(text):
     if "gas" in text or "fuel" in text:
         return "Fuel"
 
-    if any(w in text for w in ["drill","hammer","saw","tool","blade","cutter"]):
+    if any(w in text for w in ["drill","hammer","tool","saw","blade"]):
         return "Tools"
 
-    if any(w in text for w in ["wood","cement","paint","tile","pvc","pipe","brick"]):
+    if any(w in text for w in ["wood","cement","paint","pipe","pvc","tile","brick"]):
         return "Materials"
+
+    if any(w in text for w in ["restaurant","food","cafe","coffee"]):
+        return "Food"
 
     return "Other Expense"
 
 # ----------------------------------------------------
-# SAVE DATA
+# SAVE RECORD
 # ----------------------------------------------------
 
-def save_record(record_type, name, category, amount, invoice=""):
+def save_record(data, record_type):
 
     df = pd.read_excel(EXCEL_FILE)
 
+    month = datetime.now().strftime("%Y-%m")
+
     new_row = pd.DataFrame([{
-        "Date": datetime.now().strftime("%Y-%m-%d"),
+        "Date": data["date"],
+        "Month": month,
         "Type": record_type,
-        "Client / Store": name,
-        "Invoice Number": invoice,
-        "Category": category,
-        "Amount": amount
+        "Client / Store": data["client"],
+        "Invoice Number": data["invoice"],
+        "Category": classify_expense(data["client"]),
+        "Subtotal": data["subtotal"],
+        "Tax": data["tax"],
+        "Amount": data["total"]
     }])
 
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_excel(EXCEL_FILE, index=False)
 
 # ----------------------------------------------------
-# CALCULATE TOTALS
+# MONTHLY REPORT (AUTOMATIC)
+# ----------------------------------------------------
+
+def generate_monthly_report():
+
+    df = pd.read_excel(EXCEL_FILE)
+
+    monthly = df.groupby("Month")["Amount"].sum().reset_index()
+
+    return monthly.to_dict(orient="records")
+
+# ----------------------------------------------------
+# TOTALS
 # ----------------------------------------------------
 
 def calculate_totals():
@@ -267,7 +237,7 @@ def calculate_totals():
     return income, expenses, profit, annual
 
 # ----------------------------------------------------
-# PROCESS FILE (FUNCIONA EN CELULAR + RENDER)
+# PROCESS FILE
 # ----------------------------------------------------
 
 @app.route("/process-file", methods=["POST"])
@@ -278,24 +248,15 @@ def process_file():
 
     file = request.files["file"]
 
-    if file.filename == "":
-        return jsonify({"error": "No selected file"})
-
-    # nombre fijo compatible con iPhone
     filename = "upload.jpg"
     path = os.path.join(UPLOAD_FOLDER, filename)
-
     file.save(path)
 
-    text = read_receipt(path)
+    text = read_text_from_image(path)
 
-    invoice_data = extract_invoice_data(text)
+    data = extract_accounting_data(text)
 
-    amount = invoice_data["amount"]
-    client = invoice_data["client"]
-    invoice_number = invoice_data["invoice"]
-
-    if amount == 0:
+    if data["total"] == 0:
         income, expenses, profit, annual = calculate_totals()
         return jsonify({
             "income": float(income),
@@ -304,12 +265,10 @@ def process_file():
             "annual": float(annual)
         })
 
-    if detect_income(text):
-        save_record("Income", client or "Client Payment", "Income", amount, invoice_number)
+    if "payment received" in text or "deposit" in text:
+        save_record(data, "Income")
     else:
-        store = detect_store(text)
-        category = classify_expense(text)
-        save_record("Expense", store, category, amount, invoice_number)
+        save_record(data, "Expense")
 
     income, expenses, profit, annual = calculate_totals()
 
@@ -327,6 +286,14 @@ def process_file():
 @app.route("/download")
 def download():
     return send_file(EXCEL_FILE, as_attachment=True)
+
+# ----------------------------------------------------
+# MONTHLY REPORT ENDPOINT
+# ----------------------------------------------------
+
+@app.route("/monthly-report")
+def monthly_report():
+    return jsonify(generate_monthly_report())
 
 # ----------------------------------------------------
 # RUN SERVER
