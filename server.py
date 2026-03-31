@@ -32,18 +32,21 @@ def dashboard():
 
         <style>
             body {
+                margin: 0;
                 font-family: Arial;
                 background: #f4f6f8;
-                margin: 0;
-                padding: 20px;
             }
 
-            h1 {
-                color: #2c3e50;
+            .header {
+                background: #2c3e50;
+                color: white;
+                padding: 20px;
+                font-size: 22px;
             }
 
             .container {
-                max-width: 900px;
+                padding: 20px;
+                max-width: 1000px;
                 margin: auto;
             }
 
@@ -55,20 +58,39 @@ def dashboard():
 
             .card {
                 flex: 1;
-                background: white;
-                padding: 20px;
+                padding: 25px;
                 border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                color: white;
+                font-size: 20px;
+                font-weight: bold;
             }
 
-            .income { color: green; font-size: 28px; font-weight: bold; }
-            .expense { color: red; font-size: 28px; font-weight: bold; }
+            .income {
+                background: #2ecc71;
+            }
+
+            .expense {
+                background: #e74c3c;
+            }
+
+            .card-title {
+                font-size: 16px;
+                opacity: 0.8;
+            }
+
+            .upload {
+                background: white;
+                margin-top: 20px;
+                padding: 20px;
+                border-radius: 12px;
+                box-shadow: 0px 4px 12px rgba(0,0,0,0.08);
+            }
 
             button {
                 background: #2ecc71;
                 color: white;
                 border: none;
-                padding: 12px 18px;
+                padding: 12px 20px;
                 border-radius: 8px;
                 font-size: 16px;
                 cursor: pointer;
@@ -80,7 +102,10 @@ def dashboard():
             }
 
             canvas {
-                margin-top: 20px;
+                margin-top: 25px;
+                background: white;
+                padding: 20px;
+                border-radius: 12px;
             }
         </style>
 
@@ -89,41 +114,41 @@ def dashboard():
 
     <body>
 
-    <div class="container">
-
-        <h1>💼 Accounting Dashboard</h1>
-
-        <div class="cards">
-            <div class="card">
-                <h3>Total Income</h3>
-                <div class="income" id="income">$0</div>
-            </div>
-
-            <div class="card">
-                <h3>Total Expenses</h3>
-                <div class="expense" id="expenses">$0</div>
-            </div>
+        <div class="header">
+            💼 Accounting Dashboard
         </div>
 
-        <div class="card">
-            <h3>Upload Excel File</h3>
-            <input type="file" id="fileInput">
-            <br>
-            <button onclick="upload()">Upload and Calculate</button>
-        </div>
+        <div class="container">
 
-        <div class="card">
-            <h3>Income vs Expenses</h3>
+            <div class="cards">
+                <div class="card income">
+                    <div class="card-title">Total Income</div>
+                    <div id="income">$0</div>
+                </div>
+
+                <div class="card expense">
+                    <div class="card-title">Total Expenses</div>
+                    <div id="expenses">$0</div>
+                </div>
+            </div>
+
+            <div class="upload">
+                <h3>Upload Excel File</h3>
+                <input type="file" id="fileInput">
+                <br>
+                <button onclick="upload()">Upload and Calculate</button>
+            </div>
+
             <canvas id="chart"></canvas>
+
         </div>
 
-    </div>
-
-    <script>
+        <script>
 
         let chart;
 
         function upload() {
+
             let file = document.getElementById("fileInput").files[0];
 
             let formData = new FormData();
@@ -150,10 +175,12 @@ def dashboard():
                         }]
                     }
                 });
+
             });
+
         }
 
-    </script>
+        </script>
 
     </body>
     </html>
