@@ -22,9 +22,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # TESSERACT CONFIG (WINDOWS + RENDER)
 # ----------------------------------------------------
 
-import platform
-import pytesseract
-
 if platform.system() == "Windows":
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 else:
@@ -69,8 +66,10 @@ def preprocess_image(path):
     if img is None:
         return None
 
-    # Reduce size to avoid memory crash (Render fix)
-    img = cv2.resize(img, (1000, 1200))
+    # Resize but keep aspect ratio
+    h, w = img.shape[:2]
+    scale = 1000 / max(h, w)
+    img = cv2.resize(img, (int(w * scale), int(h * scale)))
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -102,7 +101,7 @@ def read_text_from_image(path):
     return text.lower()
 
 # ----------------------------------------------------
-# SMART EXTRACTION (PRO LEVEL)
+# SMART EXTRACTION
 # ----------------------------------------------------
 
 def extract_accounting_data(text):
@@ -153,7 +152,7 @@ def extract_accounting_data(text):
         if amounts:
             data["total"] = max([float(x) for x in amounts])
 
-    # CLIENT NAME (first valid line)
+    # CLIENT NAME
     lines = text.split("\n")
 
     for line in lines[:10]:
@@ -190,7 +189,7 @@ def classify_expense(text):
 # SAVE RECORD
 # ----------------------------------------------------
 
-def save_record(data, record_type):
+def save_record(data, record_type, text):
 
     df = pd.read_excel(EXCEL_FILE)
 
@@ -202,7 +201,7 @@ def save_record(data, record_type):
         "Type": record_type,
         "Client / Store": data["client"],
         "Invoice Number": data["invoice"],
-        "Category": classify_expense(data["client"]),
+        "Category": classify_expense(text),
         "Subtotal": data["subtotal"],
         "Tax": data["tax"],
         "Amount": data["total"]
@@ -210,18 +209,6 @@ def save_record(data, record_type):
 
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_excel(EXCEL_FILE, index=False)
-
-# ----------------------------------------------------
-# MONTHLY REPORT (AUTOMATIC)
-# ----------------------------------------------------
-
-def generate_monthly_report():
-
-    df = pd.read_excel(EXCEL_FILE)
-
-    monthly = df.groupby("Month")["Amount"].sum().reset_index()
-
-    return monthly.to_dict(orient="records")
 
 # ----------------------------------------------------
 # TOTALS
@@ -248,7 +235,6 @@ def process_file():
 
     try:
 
-        # Verificar que llegó archivo
         if "file" not in request.files:
             return jsonify({"error": "file not received"}), 400
 
@@ -257,22 +243,16 @@ def process_file():
         if file.filename == "":
             return jsonify({"error": "empty filename"}), 400
 
-        # Guardar archivo con nombre simple (esto arregla iPhone)
         filename = "upload.jpg"
         path = os.path.join(UPLOAD_FOLDER, filename)
 
         file.save(path)
 
-        # Leer texto con OCR
         text = read_text_from_image(path)
 
-        # Extraer datos
         data = extract_accounting_data(text)
 
-        amount = data["total"]
-
-        # Si no detecta monto, no guarda nada pero devuelve totales
-        if amount == 0:
+        if data["total"] == 0:
             income, expenses, profit, annual = calculate_totals()
             return jsonify({
                 "income": float(income),
@@ -281,13 +261,11 @@ def process_file():
                 "annual": float(annual)
             })
 
-        # Guardar ingreso o gasto
         if "deposit" in text or "payment received" in text:
-            save_record(data, "Income")
+            save_record(data, "Income", text)
         else:
-            save_record(data, "Expense")
+            save_record(data, "Expense", text)
 
-        # Calcular totales actualizados
         income, expenses, profit, annual = calculate_totals()
 
         return jsonify({
@@ -298,44 +276,7 @@ def process_file():
         })
 
     except Exception as e:
-        print("ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
-
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"})
-
-    file = request.files["file"]
-
-    filename = file.filename
-    path = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(path)
-
-    text = read_text_from_image(path)
-
-    data = extract_accounting_data(text)
-
-    if data["total"] == 0:
-        income, expenses, profit, annual = calculate_totals()
-        return jsonify({
-            "income": float(income),
-            "expenses": float(expenses),
-            "profit": float(profit),
-            "annual": float(annual)
-        })
-
-    if "payment received" in text or "deposit" in text:
-        save_record(data, "Income")
-    else:
-        save_record(data, "Expense")
-
-    income, expenses, profit, annual = calculate_totals()
-
-    return jsonify({
-        "income": float(income),
-        "expenses": float(expenses),
-        "profit": float(profit),
-        "annual": float(annual)
-    })
 
 # ----------------------------------------------------
 # DOWNLOAD EXCEL
@@ -344,14 +285,6 @@ def process_file():
 @app.route("/download")
 def download():
     return send_file(EXCEL_FILE, as_attachment=True)
-
-# ----------------------------------------------------
-# MONTHLY REPORT ENDPOINT
-# ----------------------------------------------------
-
-@app.route("/monthly-report")
-def monthly_report():
-    return jsonify(generate_monthly_report())
 
 # ----------------------------------------------------
 # RUN SERVER
