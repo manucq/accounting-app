@@ -1,11 +1,11 @@
-from flask import Flask, request, jsonify, send_file, redirect, session
-from flask_cors import CORS
+from flask import Flask, request, jsonify, redirect, session
 import pandas as pd
 import sqlite3
-import socket
+import os
 
 app = Flask(__name__)
 app.secret_key = "secret123"
+
 
 # =====================================================
 # CREAR BASE DE DATOS
@@ -15,7 +15,6 @@ def create_tables():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
 
-    # usuarios
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,7 +23,6 @@ def create_tables():
         )
     """)
 
-    # archivos subidos
     c.execute("""
         CREATE TABLE IF NOT EXISTS uploads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,20 +43,18 @@ create_tables()
 # CREAR USUARIO ADMIN AUTOMÁTICO
 # =====================================================
 
-def create_default_user():
+def create_admin():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
 
     c.execute("SELECT * FROM users WHERE username='admin'")
-    user = c.fetchone()
-
-    if not user:
+    if not c.fetchone():
         c.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", "1234"))
 
     conn.commit()
     conn.close()
 
-create_default_user()
+create_admin()
 
 
 # =====================================================
@@ -76,17 +72,17 @@ def login():
     <html>
     <head>
         <title>Login</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body { background:#f4f6f8; font-family:Arial; display:flex; justify-content:center; align-items:center; height:100vh; }
-            .box { background:white; padding:30px; border-radius:12px; width:300px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.1); }
-            input { width:100%; padding:10px; margin-top:10px; }
-            button { width:100%; padding:12px; margin-top:15px; background:#2ecc71; border:none; color:white; font-size:16px; border-radius:8px; }
+            body{background:#f4f6f8;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+            .box{background:white;padding:30px;border-radius:12px;width:300px;text-align:center;box-shadow:0 4px 15px rgba(0,0,0,0.1)}
+            input{width:100%;padding:10px;margin-top:10px}
+            button{width:100%;padding:12px;margin-top:15px;background:#2ecc71;border:none;color:white;font-size:16px;border-radius:8px}
         </style>
     </head>
     <body>
         <div class="box">
             <h2>Accounting Login</h2>
-
             <form method="POST" action="/login-check">
                 <input type="text" name="user" placeholder="Username">
                 <input type="password" name="password" placeholder="Password">
@@ -136,103 +132,123 @@ def dashboard():
     if "logged" not in session:
         return redirect("/login")
 
-    user = session["user"]
-
     return f"""
+    <!DOCTYPE html>
     <html>
     <head>
-        <title>Dashboard</title>
+        <title>Accounting Dashboard</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
         <style>
-            body {{ font-family:Arial; background:#f4f6f8; margin:0; }}
-            .header {{ background:#2c3e50; color:white; padding:20px; font-size:22px; }}
-            .container {{ padding:20px; max-width:1100px; margin:auto; }}
+            body{{font-family:Arial;background:#f4f6f8;margin:0;padding:20px}}
+            .header{{background:#2c3e50;color:white;padding:20px;font-size:22px}}
+            .logout{{float:right;color:white;text-decoration:none;font-size:14px}}
 
-            .box {{
-                background:white;
-                padding:20px;
-                border-radius:12px;
-                margin-bottom:20px;
-                box-shadow:0 4px 10px rgba(0,0,0,0.08);
-            }}
+            .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;margin-top:20px}}
 
-            input {{ padding:10px; margin-top:10px; width:100%; max-width:300px; }}
+            .card{{background:white;padding:20px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.08)}}
+            .green{{border-left:6px solid #2ecc71}}
+            .red{{border-left:6px solid #e74c3c}}
+            .blue{{border-left:6px solid #3498db}}
 
-            button {{
-                padding:12px 20px;
-                background:#2ecc71;
-                color:white;
-                border:none;
-                border-radius:8px;
-                margin-top:10px;
-            }}
+            .big{{font-size:28px;font-weight:bold;margin-top:10px}}
 
+            button{{padding:12px 20px;border:none;border-radius:8px;background:#2ecc71;color:white;font-weight:bold;cursor:pointer;margin-top:10px}}
+
+            table{{width:100%;margin-top:20px;border-collapse:collapse;background:white;border-radius:12px;overflow:hidden}}
+            th{{background:#2c3e50;color:white;padding:12px}}
+            td{{padding:10px;border-bottom:1px solid #eee}}
         </style>
     </head>
 
     <body>
 
-        <div class="header">
-            💼 Accounting Dashboard | User: {user}
-            <br>
-            <a href="/logout" style="color:white;">Cerrar sesión</a>
+    <div class="header">
+        💼 Accounting Dashboard | User: {session["user"]}
+        <a class="logout" href="/logout">Cerrar sesión</a>
+    </div>
+
+    <br>
+
+    <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
+    <button onclick="uploadFile()">Upload Excel</button>
+
+    <div class="grid">
+
+        <div class="card green">
+            <div>Total Income</div>
+            <div class="big" id="income">0</div>
         </div>
 
-        <div class="container">
-
-            <div class="box">
-                <h3>Upload Excel</h3>
-                <input type="file" id="fileInput">
-                <br>
-                <button onclick="upload()">Upload File</button>
-            </div>
-
-            <div class="box">
-                <h3>Create User</h3>
-
-                <form method="POST" action="/create-user">
-                    <input type="text" name="user" placeholder="Username"><br>
-                    <input type="password" name="password" placeholder="Password"><br>
-                    <button type="submit">Create User</button>
-                </form>
-            </div>
-
-            <div class="box">
-                <h3>My Uploaded Files</h3>
-                <div id="files"></div>
-            </div>
-
+        <div class="card red">
+            <div>Total Expenses</div>
+            <div class="big" id="expenses">0</div>
         </div>
 
-        <script>
+        <div class="card blue">
+            <div>Profit</div>
+            <div class="big" id="profit">0</div>
+        </div>
 
-        function upload() {{
+    </div>
 
-            let file = document.getElementById("fileInput").files[0];
+    <canvas id="chart"></canvas>
 
-            let formData = new FormData();
-            formData.append("file", file);
+    <table id="table">
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Type</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
 
-            fetch("/process", {{
-                method:"POST",
-                body:formData
-            }})
-            .then(res=>res.json())
-            .then(data=>{{
-                alert("File processed successfully");
-                loadFiles();
-            }});
-        }}
+<script>
 
-        function loadFiles(){{
-            fetch("/my-files")
-            .then(res=>res.text())
-            .then(data=>{{ document.getElementById("files").innerHTML = data; }});
-        }}
+let chart;
 
-        loadFiles();
+function uploadFile(){{
 
-        </script>
+    const file = document.getElementById("fileInput").files[0];
+
+    if(!file){{
+        alert("Select a file first");
+        return;
+    }}
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    fetch("/process",{{
+        method:"POST",
+        body:formData
+    }})
+    .then(res=>res.json())
+    .then(data=>{{
+
+        document.getElementById("income").innerText = data.income;
+        document.getElementById("expenses").innerText = data.expenses;
+        document.getElementById("profit").innerText = data.income - data.expenses;
+
+        if(chart) chart.destroy();
+
+        chart = new Chart(document.getElementById("chart"), {{
+            type:"bar",
+            data:{{
+                labels:["Income","Expenses","Profit"],
+                datasets:[{{data:[data.income,data.expenses,data.income-data.expenses]}}]
+            }}
+        }});
+
+    }});
+
+}}
+
+</script>
 
     </body>
     </html>
@@ -240,94 +256,34 @@ def dashboard():
 
 
 # =====================================================
-# CREAR USUARIO DESDE DASHBOARD
-# =====================================================
-
-@app.route("/create-user", methods=["POST"])
-def create_user():
-
-    if "logged" not in session:
-        return redirect("/login")
-
-    user = request.form["user"]
-    password = request.form["password"]
-
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-
-    try:
-        c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (user, password))
-        conn.commit()
-    except:
-        return "User already exists"
-
-    conn.close()
-
-    return redirect("/dashboard")
-
-
-# =====================================================
-# PROCESAR EXCEL Y GUARDAR POR USUARIO
+# PROCESAR EXCEL
 # =====================================================
 
 @app.route("/process", methods=["POST"])
-def process_files():
+def process():
 
     if "logged" not in session:
         return jsonify({"error":"not logged"})
 
-    user = session["user"]
-
     file = request.files["file"]
     df = pd.read_excel(file)
 
-    month = pd.Timestamp.now().strftime("%B")
-    year = pd.Timestamp.now().strftime("%Y")
+    income = 0
+    expenses = 0
 
-    filename = f"{user}_{month}_{year}.xlsx"
+    for _, row in df.iterrows():
+        text = str(row).lower()
+        amount = float(row["Amount"])
 
-    df.to_excel(filename, index=False)
+        if "income" in text:
+            income += amount
+        else:
+            expenses += amount
 
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-
-    c.execute("""
-        INSERT INTO uploads (username, filename, month, year)
-        VALUES (?, ?, ?, ?)
-    """, (user, filename, month, year))
-
-    conn.commit()
-    conn.close()
-
-    return jsonify({"success": True})
-
-
-# =====================================================
-# VER SOLO ARCHIVOS DEL USUARIO
-# =====================================================
-
-@app.route("/my-files")
-def my_files():
-
-    if "logged" not in session:
-        return redirect("/login")
-
-    user = session["user"]
-
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-
-    c.execute("SELECT filename, month, year FROM uploads WHERE username=?", (user,))
-    files = c.fetchall()
-
-    conn.close()
-
-    html = ""
-
-    for f in files:
-        html += f"<p>{f[0]} - {f[1]} {f[2]}</p>"
-
-    return html
+    return jsonify({
+        "income": income,
+        "expenses": expenses
+    })
 
 
 # =====================================================
