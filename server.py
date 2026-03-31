@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 
 # ----------------------------------------------------
-# CONFIGURACIÓN RENDER + OCR
+# CONFIGURACIÓN
 # ----------------------------------------------------
 
 app = Flask(__name__)
@@ -17,7 +17,7 @@ EXCEL_FILE = "accounting_data.xlsx"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Ruta correcta de tesseract en Render
+# IMPORTANTE PARA RENDER
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 # ----------------------------------------------------
@@ -35,37 +35,52 @@ if not os.path.exists(EXCEL_FILE):
     df.to_excel(EXCEL_FILE, index=False)
 
 # ----------------------------------------------------
-# OCR MEJORADO PARA RECIBOS
+# MEJORAR IMAGEN (RECIBOS TORCIDOS / POCA LUZ)
 # ----------------------------------------------------
 
-def read_receipt_text(image_path):
+def preprocess_image(path):
 
-    img = cv2.imread(image_path)
+    img = cv2.imread(path)
 
     if img is None:
-        return ""
+        return None
 
-    # aumentar resolución (muy importante para recibos)
+    # mejorar calidad (muy importante para iPhone)
     img = cv2.resize(img, None, fx=1.5, fy=1.5)
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # eliminar ruido
+    # quitar ruido
     gray = cv2.GaussianBlur(gray, (5,5), 0)
 
-    # mejorar contraste
+    # mejorar contraste automáticamente
     gray = cv2.adaptiveThreshold(
-        gray,255,
+        gray,
+        255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        11,2
+        11,
+        2
     )
 
-    text = pytesseract.image_to_string(gray)
+    return gray
+
+# ----------------------------------------------------
+# OCR MÁS PRECISO
+# ----------------------------------------------------
+
+def read_receipt(path):
+
+    processed = preprocess_image(path)
+
+    if processed is None:
+        return ""
+
+    text = pytesseract.image_to_string(processed)
     return text.lower()
 
 # ----------------------------------------------------
-# EXTRAER MONTO (TOTAL)
+# EXTRAER MONTO AUTOMÁTICO
 # ----------------------------------------------------
 
 def extract_amount(text):
@@ -75,8 +90,7 @@ def extract_amount(text):
     if not matches:
         return 0
 
-    # el monto más alto casi siempre es el total
-    return max([float(m) for m in matches])
+    return max([float(x) for x in matches])
 
 # ----------------------------------------------------
 # DETECTAR TIENDA AUTOMÁTICO
@@ -100,7 +114,7 @@ def detect_store(text):
         if store in text:
             return store.title()
 
-    # primera línea del recibo suele ser la tienda
+    # primera línea suele ser la tienda
     lines = text.split("\n")
     for line in lines:
         line = line.strip()
@@ -110,7 +124,7 @@ def detect_store(text):
     return "Unknown Store"
 
 # ----------------------------------------------------
-# DETECTAR INGRESO (DEPÓSITO)
+# DETECTAR INGRESOS (DEPÓSITOS)
 # ----------------------------------------------------
 
 def detect_income(text):
@@ -119,9 +133,8 @@ def detect_income(text):
         "deposit",
         "direct deposit",
         "payment received",
-        "credited",
         "zelle",
-        "bank deposit"
+        "credited"
     ]
 
     for k in keywords:
@@ -131,7 +144,7 @@ def detect_income(text):
     return False
 
 # ----------------------------------------------------
-# CLASIFICAR GASTO AUTOMÁTICO
+# CLASIFICAR GASTOS AUTOMÁTICO
 # ----------------------------------------------------
 
 def classify_expense(text):
@@ -139,16 +152,16 @@ def classify_expense(text):
     if "gas" in text or "fuel" in text:
         return "Fuel"
 
-    if any(word in text for word in ["drill","hammer","saw","tool","blade","cutter"]):
+    if any(w in text for w in ["drill","hammer","saw","tool","blade","cutter"]):
         return "Tools"
 
-    if any(word in text for word in ["wood","cement","paint","tile","pvc","pipe","brick"]):
+    if any(w in text for w in ["wood","cement","paint","tile","pvc","pipe","brick"]):
         return "Materials"
 
     return "Other Expense"
 
 # ----------------------------------------------------
-# GUARDAR EN EXCEL
+# GUARDAR EN EXCEL (SIN ERRORES)
 # ----------------------------------------------------
 
 def save_record(record_type, name, category, amount):
@@ -167,7 +180,7 @@ def save_record(record_type, name, category, amount):
     df.to_excel(EXCEL_FILE, index=False)
 
 # ----------------------------------------------------
-# CALCULAR RESULTADOS AUTOMÁTICOS
+# CALCULAR RESULTADOS
 # ----------------------------------------------------
 
 def calculate_totals():
@@ -183,23 +196,21 @@ def calculate_totals():
     return income, expenses, profit, annual
 
 # ----------------------------------------------------
-# SUBIR FOTO Y PROCESAR AUTOMÁTICO
+# PROCESAR FOTO (RECIBO AUTOMÁTICO)
 # ----------------------------------------------------
 
 @app.route("/process-file", methods=["POST"])
 def process_file():
 
     if "file" not in request.files:
-        return jsonify({"error":"No file uploaded"})
+        return jsonify({"error": "No file uploaded"})
 
     file = request.files["file"]
 
     path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(path)
 
-    # leer texto del recibo
-    text = read_receipt_text(path)
-
+    text = read_receipt(path)
     amount = extract_amount(text)
 
     if amount == 0:
@@ -211,10 +222,11 @@ def process_file():
             "annual": annual
         })
 
-    # detectar ingreso
+    # ingreso automático
     if detect_income(text):
         save_record("Income","Client Payment","Income",amount)
 
+    # gasto automático
     else:
         store = detect_store(text)
         category = classify_expense(text)
