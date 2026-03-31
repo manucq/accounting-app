@@ -19,7 +19,7 @@ EXCEL_FILE = "accounting_data.xlsx"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # IMPORTANT FOR RENDER / LINUX
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # ----------------------------------------------------
 # CREATE EXCEL FILE IF NOT EXISTS
