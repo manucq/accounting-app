@@ -1,28 +1,4 @@
-Below is a **corrected and fully functional version using your Flask + OCR backend AND the HTML frontend working together perfectly.**
 
-All errors are fixed:
-
-* File upload works
-* OCR runs correctly
-* Excel saves correctly
-* JSON response matches the HTML
-* Works locally AND on Render
-
----
-
-## FULL WORKING STRUCTURE
-
-Create this folder structure:
-
-smart-accounting-app/ │ ├── app.py ├── index.html ├── accounting_data.xlsx   (auto-created) └── uploads/               (auto-created)
-
----
-
-## STEP 1 — FIXED FLASK BACKEND (app.py)
-
-Copy this EXACT code:
-
-```python
 from flask import Flask, request, jsonify, send_file, send_from_directory
 import os
 import cv2
