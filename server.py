@@ -165,7 +165,13 @@ def home():
 # Procesar archivo (PDF o imagen)
 # -----------------------------------------
 @app.route("/process", methods=["POST"])
-def process_file():
+def process_files():
+
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"})
+
+    file = request.files["file"]
+    df = pd.read_excel(file)
 
     income = 0
     expenses = 0
@@ -173,91 +179,34 @@ def process_file():
     materials = 0
     tools = 0
 
-    materials_detected = []
+    for _, row in df.iterrows():
 
-    file = request.files.get("file")
+        text = str(row).lower()
 
-    if not file:
-        return jsonify({
-            "income":0,
-            "expenses":0,
-            "fuel":0,
-            "materials":0,
-            "tools":0,
-            "profit":0,
-            "top_materials":[]
-        })
+        amount = float(row["Amount"])
 
-    # Leer archivo
-    text = file.read().decode("latin-1", errors="ignore")
-    lines = text.split("\n")
+        if "income" in text:
+            income += amount
 
-    # Procesar líneas
-    for line in lines:
-
-        line_upper = line.upper()
-
-        if "$" in line:
-
-            try:
-                amount = float(line.split("$")[-1].replace(",", "").strip())
-            except:
-                continue
-
-            # INCOME
-            if "DEPOSIT" in line_upper:
-                income += amount
-                continue
-
-            # GASOLINA
-            if "SPEEDWAY" in line_upper or "SUNOCO" in line_upper or "EXXON" in line_upper:
-                fuel += amount
-                expenses += amount
-                continue
-
-            # MATERIALES
-            if "HOME DEPOT" in line_upper or "LOWES" in line_upper:
-
-                materials += amount
-                expenses += amount
-
-                # guardar material detectado
-                materials_detected.append(line.strip())
-
-                continue
-
-            # TOOLS
-            if "TOOLS" in line_upper:
-                tools += amount
-                expenses += amount
-                continue
-
-            # OTROS GASTOS
+        else:
             expenses += amount
 
-    profit = income - expenses
+        if "gas" in text or "fuel" in text:
+            fuel += amount
 
-    # Detectar materiales más usados automáticamente
-    from collections import Counter
+        if "material" in text or "home depot" in text or "lowes" in text:
+            materials += amount
 
-    counter = Counter(materials_detected)
+        if "tool" in text or "drill" in text or "saw" in text:
+            tools += amount
 
-    top_materials = []
-
-    for item in counter.most_common(5):
-        top_materials.append(item[0])
-
-    # Respuesta final
     return jsonify({
-        "income": round(income,2),
-        "expenses": round(expenses,2),
-        "fuel": round(fuel,2),
-        "materials": round(materials,2),
-        "tools": round(tools,2),
-        "profit": round(profit,2),
-        "top_materials": top_materials
+        "income": income,
+        "expenses": expenses,
+        "fuel": fuel,
+        "materials": materials,
+        "tools": tools
     })
-
 # -----------------------------------------
 # Mostrar IP para abrir desde el celular
 # -----------------------------------------
