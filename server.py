@@ -248,7 +248,7 @@ def process_file():
 
     file = request.files["file"]
 
-    filename = "upload.jpg"
+    filename = file.filename
     path = os.path.join(UPLOAD_FOLDER, filename)
     file.save(path)
 
