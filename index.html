@@ -171,41 +171,30 @@
 
 <script>
 
-/* LOGIN */
-
-function login(){
-    document.getElementById("login").style.display="none";
-    document.getElementById("app").style.display="block";
-}
-
-/* CAMERA */
+let video = document.getElementById("video");
+let canvas = document.getElementById("canvas");
 
 function openCamera(){
-
-    const video = document.getElementById("video");
-    video.style.display="block";
 
     navigator.mediaDevices.getUserMedia({
         video:{facingMode:"environment"}
     })
     .then(stream=>{
         video.srcObject = stream;
-        autoScan();
+
+        // esperar a que el video esté listo
+        video.onloadedmetadata = () => {
+            startScanning();
+        };
+    })
+    .catch(err=>{
+        alert("Camera not allowed");
     });
 }
 
-/* AUTO SCAN */
-
-let scanning = false;
-
-function autoScan(){
-
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
+function startScanning(){
 
     setInterval(()=>{
-
-        if(scanning) return;
 
         if(video.videoWidth === 0) return;
 
@@ -214,28 +203,6 @@ function autoScan(){
 
         const ctx = canvas.getContext("2d");
         ctx.drawImage(video,0,0);
-
-        // verificar si hay texto (imagen no vacía)
-        const imageData = ctx.getImageData(0,0,canvas.width,canvas.height).data;
-
-        let pixelsWithInk = 0;
-
-        for(let i = 0; i < imageData.length; i += 4){
-            const r = imageData[i];
-            const g = imageData[i+1];
-            const b = imageData[i+2];
-
-            if(r < 200 || g < 200 || b < 200){
-                pixelsWithInk++;
-            }
-        }
-
-        // si no hay suficiente texto en la imagen → no escanea
-        if(pixelsWithInk < 15000){
-            return;
-        }
-
-        scanning = true;
 
         canvas.toBlob(blob=>{
 
@@ -254,12 +221,14 @@ function autoScan(){
                 document.getElementById("profit").innerText = data.profit;
                 document.getElementById("annual").innerText = data.annual;
 
-                scanning = false;
+            })
+            .catch(err=>{
+                console.log("Server not responding");
             });
 
         });
 
-    },2500);
+    },4000);
 }
 
 </script>
