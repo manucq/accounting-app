@@ -11,7 +11,7 @@ from datetime import datetime
 # APP CONFIG
 # ----------------------------------------------------
 
-app = Flask(__name__, static_folder=".")
+app = Flask(__name__)
 
 UPLOAD_FOLDER = "uploads"
 EXCEL_FILE = "accounting_data.xlsx"
