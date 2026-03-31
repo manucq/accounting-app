@@ -13,12 +13,6 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = "uploads"
-EXCEL_FILE = "accounting_data.xlsx"
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# IMPORTANT FOR RENDER / LINUX
 import platform
 
 if platform.system() == "Windows":
