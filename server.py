@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect, session, send_file
+from flask import Flask, request, jsonify, send_file
 import os
 import cv2
 import pytesseract
@@ -7,265 +7,261 @@ import re
 from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = "secret123"
 
-UPLOAD_FOLDER = "files"
-EXCEL_FILE = "accounting_auto.xlsx"
+UPLOAD_FOLDER = "uploads"
+EXCEL_FILE = "accounting_data.xlsx"
+
+STORES_FILE = "learned_stores.txt"
+TOOLS_FILE = "learned_tools.txt"
+MATERIALS_FILE = "learned_materials.txt"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# ======================================================
+# ----------------------------------------------------
+# CREAR ARCHIVOS DE APRENDIZAJE SI NO EXISTEN
+# ----------------------------------------------------
+
+for f in [STORES_FILE, TOOLS_FILE, MATERIALS_FILE]:
+    if not os.path.exists(f):
+        open(f, "w").close()
+
+# ----------------------------------------------------
 # CREAR EXCEL AUTOMÁTICO
-# ======================================================
+# ----------------------------------------------------
 
 if not os.path.exists(EXCEL_FILE):
-    df = pd.DataFrame(columns=["Date","Month","Type","Store/Source","Category","Amount","File"])
+    df = pd.DataFrame(columns=[
+        "Date",
+        "Type",
+        "Client/Store",
+        "Category",
+        "Amount"
+    ])
     df.to_excel(EXCEL_FILE, index=False)
 
-# ======================================================
-# LEER TEXTO DESDE FOTO (recibo o screenshot banco)
-# ======================================================
+# ----------------------------------------------------
+# LEER TEXTO (OCR)
+# ----------------------------------------------------
 
 def read_text(path):
+
     img = cv2.imread(path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray,(5,5),0)
     gray = cv2.threshold(gray,150,255,cv2.THRESH_BINARY)[1]
-    text = pytesseract.image_to_string(gray)
-    return text
 
-# ======================================================
-# EXTRAER MONTO AUTOMÁTICO
-# ======================================================
+    text = pytesseract.image_to_string(gray)
+    return text.lower()
+
+# ----------------------------------------------------
+# EXTRAER MONTO
+# ----------------------------------------------------
 
 def extract_amount(text):
+
     matches = re.findall(r"\d+\.\d{2}", text)
+
     if matches:
         return max([float(m) for m in matches])
+
     return 0
 
-# ======================================================
-# DETECTAR INGRESO AUTOMÁTICO (screenshots banco)
-# ======================================================
+# ----------------------------------------------------
+# CARGAR APRENDIZAJE
+# ----------------------------------------------------
 
-def detect_income(text):
-    t = text.lower()
+def load_words(file):
+    with open(file,"r") as f:
+        return [line.strip() for line in f.readlines()]
 
-    keywords = [
-        "deposit",
-        "payment received",
-        "zelle received",
-        "direct deposit",
-        "credited",
-        "incoming transfer"
-    ]
+def save_word(file, word):
+    with open(file,"a") as f:
+        f.write(word + "\n")
 
-    for k in keywords:
-        if k in t:
+# ----------------------------------------------------
+# DETECTAR TIENDA (con aprendizaje)
+# ----------------------------------------------------
+
+def detect_store(text):
+
+    learned = load_words(STORES_FILE)
+
+    for store in learned:
+        if store in text:
+            return store.title()
+
+    # detectar nueva tienda (primera línea del recibo normalmente)
+    lines = text.split("\n")
+    if len(lines) > 0:
+        possible_store = lines[0].strip()
+
+        if len(possible_store) > 3:
+            save_word(STORES_FILE, possible_store)
+            return possible_store.title()
+
+    return "Unknown Store"
+
+# ----------------------------------------------------
+# DETECTAR MATERIALES (con aprendizaje)
+# ----------------------------------------------------
+
+def detect_material(text):
+
+    learned = load_words(MATERIALS_FILE)
+
+    for word in learned:
+        if word in text:
+            return True
+
+    material_words = ["cement","wood","pvc","pipe","paint","tile","brick"]
+
+    for w in material_words:
+        if w in text:
+            save_word(MATERIALS_FILE, w)
             return True
 
     return False
 
-# ======================================================
-# DETECTAR TIENDA (si es gasto)
-# ======================================================
+# ----------------------------------------------------
+# DETECTAR TOOLS (con aprendizaje)
+# ----------------------------------------------------
 
-def detect_store(text):
-    t = text.lower()
+def detect_tools(text):
 
-    if "home depot" in t:
-        return "Home Depot"
+    learned = load_words(TOOLS_FILE)
 
-    if "lowes" in t:
-        return "Lowes"
+    for word in learned:
+        if word in text:
+            return True
 
-    if "shell" in t or "gas" in t:
-        return "Gas Station"
+    tool_words = ["drill","saw","hammer","tool","blade","cutter"]
 
-    if "walmart" in t:
-        return "Walmart"
+    for w in tool_words:
+        if w in text:
+            save_word(TOOLS_FILE, w)
+            return True
 
-    return "Unknown"
+    return False
 
-# ======================================================
-# CLASIFICAR GASTO AUTOMÁTICO
-# ======================================================
+# ----------------------------------------------------
+# DETECTAR INGRESO
+# ----------------------------------------------------
 
-def classify(store):
+def detect_income(text):
 
-    if store in ["Home Depot","Lowes"]:
+    keywords = ["deposit","payment received","zelle","credited"]
+
+    for k in keywords:
+        if k in text:
+            return True
+
+    return False
+
+# ----------------------------------------------------
+# CLASIFICAR AUTOMÁTICO
+# ----------------------------------------------------
+
+def classify(text, store):
+
+    if detect_material(text):
         return "Materials"
 
-    if store == "Gas Station":
-        return "Fuel"
-
-    if store == "Walmart":
+    if detect_tools(text):
         return "Tools"
+
+    if "gas" in text or "fuel" in text:
+        return "Fuel"
 
     return "Other Expense"
 
-# ======================================================
-# DETECTAR DUPLICADOS
-# ======================================================
+# ----------------------------------------------------
+# GUARDAR EN EXCEL
+# ----------------------------------------------------
 
-def is_duplicate(amount):
-    df = pd.read_excel(EXCEL_FILE)
-    if amount in df["Amount"].values:
-        return True
-    return False
-
-# ======================================================
-# GUARDAR EN EXCEL AUTOMÁTICO
-# ======================================================
-
-def save_record(record_type, source, category, amount, file):
+def save_record(record_type, name, category, amount):
 
     df = pd.read_excel(EXCEL_FILE)
 
     new_row = {
         "Date": datetime.now().strftime("%Y-%m-%d"),
-        "Month": datetime.now().strftime("%B"),
         "Type": record_type,
-        "Store/Source": source,
+        "Client/Store": name,
         "Category": category,
-        "Amount": amount,
-        "File": file
+        "Amount": amount
     }
 
     df = df.append(new_row, ignore_index=True)
     df.to_excel(EXCEL_FILE, index=False)
 
-# ======================================================
-# LOGIN
-# ======================================================
+# ----------------------------------------------------
+# CALCULAR RESULTADOS
+# ----------------------------------------------------
 
-@app.route("/")
-def home():
-    return redirect("/login")
+def calculate_totals():
 
-@app.route("/login")
-def login():
-    return "<h2>Login</h2><form method='POST' action='/login-check'><input name='user'><input name='password'><button>Login</button></form>"
+    df = pd.read_excel(EXCEL_FILE)
 
-@app.route("/login-check", methods=["POST"])
-def login_check():
+    income = df[df["Type"]=="Income"]["Amount"].sum()
+    expenses = df[df["Type"]=="Expense"]["Amount"].sum()
 
-    if request.form["user"] == "admin" and request.form["password"] == "1234":
-        session["logged"] = True
-        return redirect("/dashboard")
+    profit = income - expenses
+    annual = profit * 12
 
-    return "Login incorrect"
+    return income, expenses, profit, annual
 
-# ======================================================
-# DASHBOARD CON ESCÁNER AUTOMÁTICO
-# ======================================================
-
-@app.route("/dashboard")
-def dashboard():
-
-    if "logged" not in session:
-        return redirect("/login")
-
-    return """
-    <h2>📸 Auto Scanner (Recibos + Depósitos del banco)</h2>
-
-    <video id="video" autoplay playsinline width="350"></video>
-    <canvas id="canvas" style="display:none"></canvas>
-
-    <h3 id="status">Buscando recibo o depósito...</h3>
-
-    <script>
-
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
-    const status = document.getElementById("status");
-
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-    .then(stream => {
-        video.srcObject = stream;
-        autoScan();
-    });
-
-    function autoScan(){
-
-        setInterval(() => {
-
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(video,0,0);
-
-            canvas.toBlob(blob => {
-
-                const formData = new FormData();
-                formData.append("file", blob, "scan.jpg");
-
-                fetch("/process-file",{
-                    method:"POST",
-                    body:formData
-                })
-                .then(res=>res.json())
-                .then(data=>{
-                    if(data.saved){
-                        status.innerHTML = "Guardado automáticamente ✅";
-                    }
-                });
-
-            });
-
-        },3000);
-    }
-
-    </script>
-
-    <br><br>
-    <a href="/download">📥 Descargar Excel automático</a>
-    """
-
-# ======================================================
-# PROCESAR IMAGEN (detecta ingreso o gasto)
-# ======================================================
+# ----------------------------------------------------
+# PROCESAR FOTO
+# ----------------------------------------------------
 
 @app.route("/process-file", methods=["POST"])
 def process_file():
 
     file = request.files["file"]
 
-    path = os.path.join(UPLOAD_FOLDER,file.filename)
+    path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(path)
 
     text = read_text(path)
     amount = extract_amount(text)
 
     if amount == 0:
-        return jsonify({"saved":False})
-
-    if is_duplicate(amount):
-        return jsonify({"saved":False})
+        income, expenses, profit, annual = calculate_totals()
+        return jsonify({
+            "income": income,
+            "expenses": expenses,
+            "profit": profit,
+            "annual": annual
+        })
 
     # ingreso
     if detect_income(text):
-        save_record("Income","Bank Deposit","Income",amount,file.filename)
-        return jsonify({"saved":True})
+        save_record("Income","Client Payment","Income",amount)
 
-    # gasto
-    store = detect_store(text)
-    category = classify(store)
+    else:
+        store = detect_store(text)
+        category = classify(text, store)
+        save_record("Expense",store,category,amount)
 
-    save_record("Expense",store,category,amount,file.filename)
-    return jsonify({"saved":True})
+    income, expenses, profit, annual = calculate_totals()
 
-# ======================================================
+    return jsonify({
+        "income": income,
+        "expenses": expenses,
+        "profit": profit,
+        "annual": annual
+    })
+
+# ----------------------------------------------------
 # DESCARGAR EXCEL
-# ======================================================
+# ----------------------------------------------------
 
 @app.route("/download")
 def download():
     return send_file(EXCEL_FILE, as_attachment=True)
 
-# ======================================================
+# ----------------------------------------------------
 # RUN
-# ======================================================
+# ----------------------------------------------------
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
