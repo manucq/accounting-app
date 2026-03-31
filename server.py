@@ -3,20 +3,19 @@ from flask_cors import CORS
 import pandas as pd
 import sqlite3
 import socket
-import io
-import qrcode
 
 app = Flask(__name__)
 app.secret_key = "secret123"
 
 # =====================================================
-# CREAR BASE DE DATOS Y USUARIOS
+# CREAR BASE DE DATOS
 # =====================================================
 
-def create_users_table():
+def create_tables():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
 
+    # usuarios
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,11 +24,26 @@ def create_users_table():
         )
     """)
 
+    # archivos subidos
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS uploads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            filename TEXT,
+            month TEXT,
+            year TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
-create_users_table()
+create_tables()
 
+
+# =====================================================
+# CREAR USUARIO ADMIN AUTOMÁTICO
+# =====================================================
 
 def create_default_user():
     conn = sqlite3.connect("database.db")
@@ -48,23 +62,7 @@ create_default_user()
 
 
 # =====================================================
-# OBTENER IP LOCAL (para celular)
-# =====================================================
-
-def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-    except:
-        ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
-
-
-# =====================================================
-# RUTA PRINCIPAL
+# LOGIN
 # =====================================================
 
 @app.route("/")
@@ -72,59 +70,21 @@ def home():
     return redirect("/login")
 
 
-# =====================================================
-# LOGIN
-# =====================================================
-
 @app.route("/login")
 def login():
     return """
     <html>
     <head>
         <title>Login</title>
-
         <style>
-            body {
-                background: #f4f6f8;
-                font-family: Arial;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-            }
-
-            .login-box {
-                background: white;
-                padding: 30px;
-                border-radius: 12px;
-                box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
-                width: 300px;
-                text-align: center;
-            }
-
-            input {
-                width: 100%;
-                padding: 10px;
-                margin-top: 10px;
-                border-radius: 6px;
-                border: 1px solid #ccc;
-            }
-
-            button {
-                width: 100%;
-                padding: 12px;
-                margin-top: 15px;
-                background: #2ecc71;
-                border: none;
-                color: white;
-                font-size: 16px;
-                border-radius: 8px;
-            }
+            body { background:#f4f6f8; font-family:Arial; display:flex; justify-content:center; align-items:center; height:100vh; }
+            .box { background:white; padding:30px; border-radius:12px; width:300px; text-align:center; box-shadow:0 4px 15px rgba(0,0,0,0.1); }
+            input { width:100%; padding:10px; margin-top:10px; }
+            button { width:100%; padding:12px; margin-top:15px; background:#2ecc71; border:none; color:white; font-size:16px; border-radius:8px; }
         </style>
     </head>
-
     <body>
-        <div class="login-box">
+        <div class="box">
             <h2>Accounting Login</h2>
 
             <form method="POST" action="/login-check">
@@ -160,10 +120,6 @@ def login_check():
     return "Login incorrect"
 
 
-# =====================================================
-# LOGOUT
-# =====================================================
-
 @app.route("/logout")
 def logout():
     session.clear()
@@ -171,7 +127,7 @@ def logout():
 
 
 # =====================================================
-# DASHBOARD (PROTEGIDO)
+# DASHBOARD
 # =====================================================
 
 @app.route("/dashboard")
@@ -180,148 +136,101 @@ def dashboard():
     if "logged" not in session:
         return redirect("/login")
 
-    return """
+    user = session["user"]
+
+    return f"""
     <html>
     <head>
-        <title>Accounting Dashboard</title>
+        <title>Dashboard</title>
 
         <style>
-            body {
-                margin: 0;
-                font-family: Arial;
-                background: #f4f6f8;
-            }
+            body {{ font-family:Arial; background:#f4f6f8; margin:0; }}
+            .header {{ background:#2c3e50; color:white; padding:20px; font-size:22px; }}
+            .container {{ padding:20px; max-width:1100px; margin:auto; }}
 
-            .header {
-                background: #2c3e50;
-                color: white;
-                padding: 20px;
-                font-size: 22px;
-            }
+            .box {{
+                background:white;
+                padding:20px;
+                border-radius:12px;
+                margin-bottom:20px;
+                box-shadow:0 4px 10px rgba(0,0,0,0.08);
+            }}
 
-            .container {
-                padding: 20px;
-                max-width: 1100px;
-                margin: auto;
-            }
+            input {{ padding:10px; margin-top:10px; width:100%; max-width:300px; }}
 
-            .cards {
-                display: flex;
-                gap: 20px;
-                flex-wrap: wrap;
-            }
+            button {{
+                padding:12px 20px;
+                background:#2ecc71;
+                color:white;
+                border:none;
+                border-radius:8px;
+                margin-top:10px;
+            }}
 
-            .card {
-                flex: 1;
-                padding: 25px;
-                border-radius: 12px;
-                color: white;
-                font-size: 20px;
-                font-weight: bold;
-            }
-
-            .income { background: #2ecc71; }
-            .expense { background: #e74c3c; }
-
-            .upload {
-                background: white;
-                margin-top: 20px;
-                padding: 20px;
-                border-radius: 12px;
-                box-shadow: 0px 4px 12px rgba(0,0,0,0.08);
-            }
-
-            button {
-                background: #2ecc71;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                border-radius: 8px;
-                font-size: 16px;
-                cursor: pointer;
-                margin-top: 10px;
-            }
-
-            canvas {
-                margin-top: 25px;
-                background: white;
-                padding: 20px;
-                border-radius: 12px;
-            }
         </style>
-
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     </head>
 
     <body>
 
         <div class="header">
-            💼 Accounting Dashboard | User: """ + session["user"] + """
+            💼 Accounting Dashboard | User: {user}
             <br>
             <a href="/logout" style="color:white;">Cerrar sesión</a>
         </div>
 
         <div class="container">
 
-            <div class="cards">
-                <div class="card income">
-                    Total Income
-                    <div id="income">$0</div>
-                </div>
-
-                <div class="card expense">
-                    Total Expenses
-                    <div id="expenses">$0</div>
-                </div>
-            </div>
-
-            <div class="upload">
-                <h3>Upload Excel File</h3>
+            <div class="box">
+                <h3>Upload Excel</h3>
                 <input type="file" id="fileInput">
                 <br>
-                <button onclick="upload()">Upload and Process</button>
+                <button onclick="upload()">Upload File</button>
             </div>
 
-            <canvas id="chart"></canvas>
+            <div class="box">
+                <h3>Create User</h3>
+
+                <form method="POST" action="/create-user">
+                    <input type="text" name="user" placeholder="Username"><br>
+                    <input type="password" name="password" placeholder="Password"><br>
+                    <button type="submit">Create User</button>
+                </form>
+            </div>
+
+            <div class="box">
+                <h3>My Uploaded Files</h3>
+                <div id="files"></div>
+            </div>
 
         </div>
 
         <script>
 
-        let chart;
-
-        function upload() {
+        function upload() {{
 
             let file = document.getElementById("fileInput").files[0];
 
             let formData = new FormData();
             formData.append("file", file);
 
-            fetch("/process", {
-                method: "POST",
-                body: formData
-            })
-            .then(res => res.json())
-            .then(data => {
+            fetch("/process", {{
+                method:"POST",
+                body:formData
+            }})
+            .then(res=>res.json())
+            .then(data=>{{
+                alert("File processed successfully");
+                loadFiles();
+            }});
+        }}
 
-                document.getElementById("income").innerText = "$" + data.income;
-                document.getElementById("expenses").innerText = "$" + data.expenses;
+        function loadFiles(){{
+            fetch("/my-files")
+            .then(res=>res.text())
+            .then(data=>{{ document.getElementById("files").innerHTML = data; }});
+        }}
 
-                if(chart) chart.destroy();
-
-                chart = new Chart(document.getElementById("chart"), {
-                    type: "bar",
-                    data: {
-                        labels: ["Income", "Expenses"],
-                        datasets: [{
-                            data: [data.income, data.expenses]
-                        }]
-                    }
-                });
-
-            });
-
-        }
+        loadFiles();
 
         </script>
 
@@ -331,35 +240,94 @@ def dashboard():
 
 
 # =====================================================
-# PROCESAR EXCEL AUTOMÁTICO
+# CREAR USUARIO DESDE DASHBOARD
+# =====================================================
+
+@app.route("/create-user", methods=["POST"])
+def create_user():
+
+    if "logged" not in session:
+        return redirect("/login")
+
+    user = request.form["user"]
+    password = request.form["password"]
+
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+
+    try:
+        c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (user, password))
+        conn.commit()
+    except:
+        return "User already exists"
+
+    conn.close()
+
+    return redirect("/dashboard")
+
+
+# =====================================================
+# PROCESAR EXCEL Y GUARDAR POR USUARIO
 # =====================================================
 
 @app.route("/process", methods=["POST"])
 def process_files():
 
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"})
+    if "logged" not in session:
+        return jsonify({"error":"not logged"})
+
+    user = session["user"]
 
     file = request.files["file"]
     df = pd.read_excel(file)
 
-    income = 0
-    expenses = 0
+    month = pd.Timestamp.now().strftime("%B")
+    year = pd.Timestamp.now().strftime("%Y")
 
-    for _, row in df.iterrows():
+    filename = f"{user}_{month}_{year}.xlsx"
 
-        text = str(row).lower()
-        amount = float(row["Amount"])
+    df.to_excel(filename, index=False)
 
-        if "income" in text:
-            income += amount
-        else:
-            expenses += amount
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
 
-    return jsonify({
-        "income": income,
-        "expenses": expenses
-    })
+    c.execute("""
+        INSERT INTO uploads (username, filename, month, year)
+        VALUES (?, ?, ?, ?)
+    """, (user, filename, month, year))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"success": True})
+
+
+# =====================================================
+# VER SOLO ARCHIVOS DEL USUARIO
+# =====================================================
+
+@app.route("/my-files")
+def my_files():
+
+    if "logged" not in session:
+        return redirect("/login")
+
+    user = session["user"]
+
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+
+    c.execute("SELECT filename, month, year FROM uploads WHERE username=?", (user,))
+    files = c.fetchall()
+
+    conn.close()
+
+    html = ""
+
+    for f in files:
+        html += f"<p>{f[0]} - {f[1]} {f[2]}</p>"
+
+    return html
 
 
 # =====================================================
