@@ -1,4 +1,3 @@
-
 from flask import Flask, request, jsonify, send_file, send_from_directory
 import os
 import cv2
@@ -6,6 +5,7 @@ import pytesseract
 import pandas as pd
 import re
 from datetime import datetime
+import platform
 
 # ----------------------------------------------------
 # APP CONFIG
@@ -13,7 +13,14 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-import platform
+UPLOAD_FOLDER = "uploads"
+EXCEL_FILE = "accounting_data.xlsx"
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# ----------------------------------------------------
+# TESSERACT (WINDOWS + RENDER)
+# ----------------------------------------------------
 
 if platform.system() == "Windows":
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -43,7 +50,7 @@ def home():
     return send_from_directory(".", "index.html")
 
 # ----------------------------------------------------
-# IMAGE PREPROCESSING (WORKS WELL WITH IPHONE)
+# IMAGE PREPROCESSING
 # ----------------------------------------------------
 
 def preprocess_image(path):
@@ -198,7 +205,7 @@ def calculate_totals():
     return income, expenses, profit, annual
 
 # ----------------------------------------------------
-# PROCESS FILE FROM HTML
+# PROCESS FILE
 # ----------------------------------------------------
 
 @app.route("/process-file", methods=["POST"])
@@ -252,7 +259,7 @@ def download():
     return send_file(EXCEL_FILE, as_attachment=True)
 
 # ----------------------------------------------------
-# RUN SERVER (LOCAL + RENDER)
+# RUN SERVER
 # ----------------------------------------------------
 
 if __name__ == "__main__":
