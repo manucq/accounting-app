@@ -190,7 +190,7 @@ def calculate_totals():
     return income, expenses, profit, annual
 
 # ----------------------------------------------------
-# SUBIR FOTO
+# PROCESAR FOTO
 # ----------------------------------------------------
 
 @app.route("/process-file", methods=["POST"])
