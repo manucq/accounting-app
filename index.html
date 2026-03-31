@@ -3,12 +3,30 @@
 <head>
     <title>Accounting Dashboard</title>
 
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
     <style>
 
         body{
             font-family: Arial;
             background:#f4f6f8;
             padding:20px;
+            margin:0;
+        }
+
+        .header{
+            background:#2c3e50;
+            color:white;
+            padding:20px;
+            font-size:22px;
+            margin-bottom:20px;
+        }
+
+        .logout{
+            float:right;
+            color:white;
+            text-decoration:none;
+            font-size:14px;
         }
 
         .title{
@@ -19,7 +37,7 @@
 
         .grid{
             display:grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap:20px;
             margin-bottom:25px;
         }
@@ -38,6 +56,7 @@
         .big{
             font-size:28px;
             font-weight:bold;
+            margin-top:10px;
         }
 
         button{
@@ -53,6 +72,8 @@
         input{
             padding:10px;
             margin-bottom:10px;
+            width:100%;
+            max-width:300px;
         }
 
         .materials-box{
@@ -68,22 +89,27 @@
 
 <body>
 
-<div class="title">QuickBooks Style Dashboard 💼</div>
+<div class="header">
+    💼 Accounting Dashboard
+    <a class="logout" href="/logout">Cerrar sesión</a>
+</div>
 
-<input type="file" id="fileInput" accept=".pdf,image/*"><br>
-<button onclick="uploadFile()">Process Document</button>
+<div class="title">QuickBooks Style Dashboard 📊</div>
+
+<input type="file" id="fileInput" accept=".xlsx,.xls"><br>
+<button onclick="uploadFile()">Upload Excel</button>
 
 <br><br>
 
 <div class="grid">
 
     <div class="card green">
-        <div>Income</div>
+        <div>Total Income</div>
         <div class="big" id="income">0</div>
     </div>
 
     <div class="card red">
-        <div>Expenses</div>
+        <div>Total Expenses</div>
         <div class="big" id="expenses">0</div>
     </div>
 
@@ -128,7 +154,7 @@ function uploadFile(){
     const formData = new FormData();
     formData.append("file", file);
 
-    fetch("http://127.0.0.1:5000/process",{
+    fetch("/process",{
         method:"POST",
         body:formData
     })
@@ -137,7 +163,7 @@ function uploadFile(){
 
         document.getElementById("income").innerText = data.income;
         document.getElementById("expenses").innerText = data.expenses;
-        document.getElementById("profit").innerText = data.profit;
+        document.getElementById("profit").innerText = data.income - data.expenses;
         document.getElementById("fuel").innerText = data.fuel;
         document.getElementById("materials").innerText = data.materials;
         document.getElementById("tools").innerText = data.tools;
@@ -145,11 +171,13 @@ function uploadFile(){
         const list = document.getElementById("materialsList");
         list.innerHTML = "";
 
-        data.top_materials.forEach(mat=>{
-            const li = document.createElement("li");
-            li.innerText = mat;
-            list.appendChild(li);
-        });
+        if(data.top_materials){
+            data.top_materials.forEach(mat=>{
+                const li = document.createElement("li");
+                li.innerText = mat;
+                list.appendChild(li);
+            });
+        }
 
     });
 
