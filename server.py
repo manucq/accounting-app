@@ -22,6 +22,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # TESSERACT CONFIG (WINDOWS + RENDER)
 # ----------------------------------------------------
 
+import platform
+import pytesseract
+
 if platform.system() == "Windows":
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 else:
