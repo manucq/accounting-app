@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect, session
+from flask import Flask, request, jsonify, redirect, session, send_from_directory
 import pandas as pd
 import sqlite3
 import os
@@ -8,7 +8,7 @@ app.secret_key = "secret123"
 
 
 # =====================================================
-# CREAR BASE DE DATOS
+# BASE DE DATOS
 # =====================================================
 
 def create_tables():
@@ -20,16 +20,6 @@ def create_tables():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE,
             password TEXT
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS uploads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            filename TEXT,
-            month TEXT,
-            year TEXT
         )
     """)
 
@@ -58,6 +48,20 @@ create_admin()
 
 
 # =====================================================
+# PWA FILES (icono y manifest)
+# =====================================================
+
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory(".", "manifest.json")
+
+
+@app.route("/icon.png")
+def icon():
+    return send_from_directory(".", "icon.png")
+
+
+# =====================================================
 # LOGIN
 # =====================================================
 
@@ -69,26 +73,84 @@ def home():
 @app.route("/login")
 def login():
     return """
+    <!DOCTYPE html>
     <html>
     <head>
-        <title>Login</title>
+        <title>Accounting App</title>
+
         <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <link rel="manifest" href="/manifest.json">
+        <meta name="theme-color" content="#2ecc71">
+
         <style>
-            body{background:#f4f6f8;font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
-            .box{background:white;padding:30px;border-radius:12px;width:300px;text-align:center;box-shadow:0 4px 15px rgba(0,0,0,0.1)}
-            input{width:100%;padding:10px;margin-top:10px}
-            button{width:100%;padding:12px;margin-top:15px;background:#2ecc71;border:none;color:white;font-size:16px;border-radius:8px}
+
+        body{
+            margin:0;
+            font-family:Arial;
+            background:linear-gradient(135deg,#2ecc71,#27ae60);
+            height:100vh;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+        }
+
+        .box{
+            background:white;
+            padding:40px;
+            border-radius:18px;
+            width:300px;
+            text-align:center;
+            box-shadow:0 10px 30px rgba(0,0,0,0.2);
+            animation:fade 0.8s ease;
+        }
+
+        @keyframes fade{
+            from{opacity:0;transform:translateY(40px);}
+            to{opacity:1;transform:translateY(0);}
+        }
+
+        h2{
+            margin-bottom:20px;
+        }
+
+        input{
+            width:100%;
+            padding:12px;
+            margin-top:12px;
+            border-radius:8px;
+            border:1px solid #ccc;
+        }
+
+        button{
+            width:100%;
+            padding:14px;
+            margin-top:18px;
+            border:none;
+            border-radius:10px;
+            background:#2ecc71;
+            color:white;
+            font-size:16px;
+            font-weight:bold;
+            cursor:pointer;
+        }
+
         </style>
     </head>
+
     <body>
+
         <div class="box">
-            <h2>Accounting Login</h2>
+            <h2>💼 Accounting App</h2>
+
             <form method="POST" action="/login-check">
                 <input type="text" name="user" placeholder="Username">
                 <input type="password" name="password" placeholder="Password">
                 <button type="submit">Entrar</button>
             </form>
+
         </div>
+
     </body>
     </html>
     """
@@ -133,79 +195,71 @@ def dashboard():
         return redirect("/login")
 
     return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Accounting Dashboard</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Accounting Dashboard</title>
 
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-        <style>
-            body{{font-family:Arial;background:#f4f6f8;margin:0;padding:20px}}
-            .header{{background:#2c3e50;color:white;padding:20px;font-size:22px}}
-            .logout{{float:right;color:white;text-decoration:none;font-size:14px}}
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#2ecc71">
 
-            .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;margin-top:20px}}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-            .card{{background:white;padding:20px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.08)}}
-            .green{{border-left:6px solid #2ecc71}}
-            .red{{border-left:6px solid #e74c3c}}
-            .blue{{border-left:6px solid #3498db}}
+<style>
 
-            .big{{font-size:28px;font-weight:bold;margin-top:10px}}
+body{{font-family:Arial;background:#f4f6f8;margin:0;padding:20px}}
 
-            button{{padding:12px 20px;border:none;border-radius:8px;background:#2ecc71;color:white;font-weight:bold;cursor:pointer;margin-top:10px}}
+.header{{background:#2c3e50;color:white;padding:20px;font-size:22px}}
+.logout{{float:right;color:white;text-decoration:none;font-size:14px}}
 
-            table{{width:100%;margin-top:20px;border-collapse:collapse;background:white;border-radius:12px;overflow:hidden}}
-            th{{background:#2c3e50;color:white;padding:12px}}
-            td{{padding:10px;border-bottom:1px solid #eee}}
-        </style>
-    </head>
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;margin-top:20px}}
 
-    <body>
+.card{{background:white;padding:20px;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.08)}}
+.green{{border-left:6px solid #2ecc71}}
+.red{{border-left:6px solid #e74c3c}}
+.blue{{border-left:6px solid #3498db}}
 
-    <div class="header">
-        💼 Accounting Dashboard | User: {session["user"]}
-        <a class="logout" href="/logout">Cerrar sesión</a>
+.big{{font-size:28px;font-weight:bold;margin-top:10px}}
+
+button{{padding:12px 20px;border:none;border-radius:8px;background:#2ecc71;color:white;font-weight:bold;cursor:pointer;margin-top:10px}}
+
+</style>
+</head>
+
+<body>
+
+<div class="header">
+    💼 Accounting Dashboard | User: {session["user"]}
+    <a class="logout" href="/logout">Cerrar sesión</a>
+</div>
+
+<br>
+
+<input type="file" id="fileInput" accept=".xlsx,.xls"><br>
+<button onclick="uploadFile()">Upload Excel</button>
+
+<div class="grid">
+
+    <div class="card green">
+        <div>Total Income</div>
+        <div class="big" id="income">0</div>
     </div>
 
-    <br>
-
-    <input type="file" id="fileInput" accept=".xlsx,.xls"><br>
-    <button onclick="uploadFile()">Upload Excel</button>
-
-    <div class="grid">
-
-        <div class="card green">
-            <div>Total Income</div>
-            <div class="big" id="income">0</div>
-        </div>
-
-        <div class="card red">
-            <div>Total Expenses</div>
-            <div class="big" id="expenses">0</div>
-        </div>
-
-        <div class="card blue">
-            <div>Profit</div>
-            <div class="big" id="profit">0</div>
-        </div>
-
+    <div class="card red">
+        <div>Total Expenses</div>
+        <div class="big" id="expenses">0</div>
     </div>
 
-    <canvas id="chart"></canvas>
+    <div class="card blue">
+        <div>Profit</div>
+        <div class="big" id="profit">0</div>
+    </div>
 
-    <table id="table">
-        <thead>
-            <tr>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Type</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+</div>
+
+<canvas id="chart"></canvas>
 
 <script>
 
@@ -250,9 +304,9 @@ function uploadFile(){{
 
 </script>
 
-    </body>
-    </html>
-    """
+</body>
+</html>
+"""
 
 
 # =====================================================
