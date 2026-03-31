@@ -16,6 +16,7 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 EXCEL_FILE = "accounting_data.xlsx"
 
+# Crear carpeta uploads si no existe
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # ----------------------------------------------------
@@ -50,7 +51,7 @@ def home():
     return send_from_directory(".", "index.html")
 
 # ----------------------------------------------------
-# IMAGE PREPROCESSING
+# IMAGE PREPROCESSING (MEJORADO PARA CELULARES)
 # ----------------------------------------------------
 
 def preprocess_image(path):
@@ -58,13 +59,18 @@ def preprocess_image(path):
     img = cv2.imread(path)
 
     if img is None:
+        print("ERROR: No se pudo cargar la imagen")
         return None
 
+    # Redimensionar para mejor OCR
     img = cv2.resize(img, None, fx=1.5, fy=1.5)
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (5,5), 0)
 
+    # Mejorar contraste
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Umbral adaptativo (mejor para tickets)
     gray = cv2.adaptiveThreshold(
         gray,
         255,
@@ -205,7 +211,7 @@ def calculate_totals():
     return income, expenses, profit, annual
 
 # ----------------------------------------------------
-# PROCESS FILE
+# PROCESS FILE (ARREGLADO PARA CELULARES)
 # ----------------------------------------------------
 
 @app.route("/process-file", methods=["POST"])
@@ -219,7 +225,10 @@ def process_file():
     if file.filename == "":
         return jsonify({"error": "No selected file"})
 
-    path = os.path.join(UPLOAD_FOLDER, file.filename)
+    # 🔥 SOLUCIÓN: nombre fijo compatible con iPhone
+    filename = "receipt.jpg"
+    path = os.path.join(UPLOAD_FOLDER, filename)
+
     file.save(path)
 
     text = read_receipt(path)
