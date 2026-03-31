@@ -2,6 +2,17 @@ from flask import Flask, request, jsonify, send_file, redirect, session
 from flask_cors import CORS
 import pandas as pd
 import sqlite3
+import socket
+import io
+import qrcode
+
+app = Flask(__name__)
+app.secret_key = "secret123"
+
+# =====================================================
+# CREAR BASE DE DATOS Y USUARIOS
+# =====================================================
+
 def create_users_table():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
@@ -9,7 +20,7 @@ def create_users_table():
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
+            username TEXT UNIQUE,
             password TEXT
         )
     """)
@@ -18,6 +29,8 @@ def create_users_table():
     conn.close()
 
 create_users_table()
+
+
 def create_default_user():
     conn = sqlite3.connect("database.db")
     c = conn.cursor()
@@ -33,12 +46,11 @@ def create_default_user():
 
 create_default_user()
 
-app = Flask(__name__)
-app.secret_key = "secret123"
 
-# -----------------------------------------
-# Obtener IP local automáticamente
-# -----------------------------------------
+# =====================================================
+# OBTENER IP LOCAL (para celular)
+# =====================================================
+
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -50,19 +62,124 @@ def get_local_ip():
         s.close()
     return ip
 
-# -----------------------------------------
-# Ruta principal
-# -----------------------------------------
+
+# =====================================================
+# RUTA PRINCIPAL
+# =====================================================
+
 @app.route("/")
 def home():
     return redirect("/login")
 
+
+# =====================================================
+# LOGIN
+# =====================================================
+
+@app.route("/login")
+def login():
+    return """
+    <html>
+    <head>
+        <title>Login</title>
+
+        <style>
+            body {
+                background: #f4f6f8;
+                font-family: Arial;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+            }
+
+            .login-box {
+                background: white;
+                padding: 30px;
+                border-radius: 12px;
+                box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
+                width: 300px;
+                text-align: center;
+            }
+
+            input {
+                width: 100%;
+                padding: 10px;
+                margin-top: 10px;
+                border-radius: 6px;
+                border: 1px solid #ccc;
+            }
+
+            button {
+                width: 100%;
+                padding: 12px;
+                margin-top: 15px;
+                background: #2ecc71;
+                border: none;
+                color: white;
+                font-size: 16px;
+                border-radius: 8px;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="login-box">
+            <h2>Accounting Login</h2>
+
+            <form method="POST" action="/login-check">
+                <input type="text" name="user" placeholder="Username">
+                <input type="password" name="password" placeholder="Password">
+                <button type="submit">Entrar</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+
+
+@app.route("/login-check", methods=["POST"])
+def login_check():
+
+    user = request.form["user"]
+    password = request.form["password"]
+
+    conn = sqlite3.connect("database.db")
+    c = conn.cursor()
+
+    c.execute("SELECT * FROM users WHERE username=? AND password=?", (user, password))
+    result = c.fetchone()
+
+    conn.close()
+
+    if result:
+        session["logged"] = True
+        session["user"] = user
+        return redirect("/dashboard")
+
+    return "Login incorrect"
+
+
+# =====================================================
+# LOGOUT
+# =====================================================
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+# =====================================================
+# DASHBOARD (PROTEGIDO)
+# =====================================================
 
 @app.route("/dashboard")
 def dashboard():
 
     if "logged" not in session:
         return redirect("/login")
+
     return """
     <html>
     <head>
@@ -125,26 +242,6 @@ def dashboard():
                 margin-top: 10px;
             }
 
-            table {
-                width: 100%;
-                margin-top: 20px;
-                border-collapse: collapse;
-                background: white;
-                border-radius: 12px;
-                overflow: hidden;
-            }
-
-            th {
-                background: #2c3e50;
-                color: white;
-                padding: 12px;
-            }
-
-            td {
-                padding: 10px;
-                border-bottom: 1px solid #eee;
-            }
-
             canvas {
                 margin-top: 25px;
                 background: white;
@@ -159,7 +256,9 @@ def dashboard():
     <body>
 
         <div class="header">
-            💼 Accounting Dashboard
+            💼 Accounting Dashboard | User: """ + session["user"] + """
+            <br>
+            <a href="/logout" style="color:white;">Cerrar sesión</a>
         </div>
 
         <div class="container">
@@ -183,20 +282,7 @@ def dashboard():
                 <button onclick="upload()">Upload and Process</button>
             </div>
 
-            <button onclick="download()">Download Excel Report</button>
-
             <canvas id="chart"></canvas>
-
-            <table id="table">
-                <thead>
-                    <tr>
-                        <th>Description</th>
-                        <th>Amount</th>
-                        <th>Type</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
 
         </div>
 
@@ -237,21 +323,17 @@ def dashboard():
 
         }
 
-        function download() {
-            window.location.href = "/download";
-        }
-
         </script>
 
     </body>
     </html>
     """
-def home():
-    return open("index.html", "r", encoding="utf-8").read()
 
-# -----------------------------------------
-# Procesar archivo (PDF o imagen)
-# -----------------------------------------
+
+# =====================================================
+# PROCESAR EXCEL AUTOMÁTICO
+# =====================================================
+
 @app.route("/process", methods=["POST"])
 def process_files():
 
@@ -263,12 +345,6 @@ def process_files():
 
     income = 0
     expenses = 0
-    fuel = 0
-    materials = 0
-    tools = 0
-
-    # Detectar cliente automáticamente
-    client = "General"
 
     for _, row in df.iterrows():
 
@@ -280,179 +356,15 @@ def process_files():
         else:
             expenses += amount
 
-        if "gas" in text or "fuel" in text:
-            fuel += amount
-
-        if "home depot" in text or "lowes" in text or "material" in text:
-            materials += amount
-
-        if "tool" in text or "drill" in text or "saw" in text:
-            tools += amount
-
-        # detectar cliente si aparece nombre
-        if "client" in text:
-            client = text
-
-    # -----------------------------
-    # ARCHIVO POR MES
-    # -----------------------------
-    month = pd.Timestamp.now().strftime("%B")
-    month_file = f"{month}.xlsx"
-
-    # -----------------------------
-    # ARCHIVO ANUAL
-    # -----------------------------
-    year = pd.Timestamp.now().strftime("%Y")
-    year_file = f"{year}.xlsx"
-
-    # -----------------------------
-    # ARCHIVO POR CLIENTE
-    # -----------------------------
-    client_file = f"{client}.xlsx"
-
-    summary = pd.DataFrame({
-        "Category": ["Income", "Expenses", "Fuel", "Materials", "Tools"],
-        "Total": [income, expenses, fuel, materials, tools]
-    })
-
-    # Guardar archivo mensual
-    with pd.ExcelWriter(month_file, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Transactions")
-        summary.to_excel(writer, index=False, sheet_name="Summary")
-
-    # Guardar archivo anual
-    with pd.ExcelWriter(year_file, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Transactions")
-        summary.to_excel(writer, index=False, sheet_name="Summary")
-
-    # Guardar archivo por cliente
-    with pd.ExcelWriter(client_file, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Transactions")
-        summary.to_excel(writer, index=False, sheet_name="Summary")
-
     return jsonify({
         "income": income,
-        "expenses": expenses,
-        "fuel": fuel,
-        "materials": materials,
-        "tools": tools,
-        "month_file": month_file,
-        "year_file": year_file,
-        "client_file": client_file
+        "expenses": expenses
     })
-# -----------------------------------------
-# Mostrar IP para abrir desde el celular
-# -----------------------------------------
-@app.route("/get-ip")
-def get_ip():
-    return jsonify({"ip": get_local_ip()})
 
-# -----------------------------------------
-# Generar código QR automático
-# -----------------------------------------
-@app.route("/qr")
-def get_qr():
 
-    ip = get_local_ip()
-    link = f"http://{ip}:5000"
-
-    img = qrcode.make(link)
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-
-    return send_file(buf, mimetype="image/png")
-
-# -----------------------------------------
-# Ejecutar servidor
-# -----------------------------------------
-@app.route("/login")
-def login():
-    return """
-    <html>
-    <head>
-        <style>
-            body {
-                background: #f4f6f8;
-                font-family: Arial;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-            }
-
-            .login-box {
-                background: white;
-                padding: 30px;
-                border-radius: 12px;
-                box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
-                width: 300px;
-                text-align: center;
-            }
-
-            input {
-                width: 100%;
-                padding: 10px;
-                margin-top: 10px;
-                border-radius: 6px;
-                border: 1px solid #ccc;
-            }
-
-            button {
-                width: 100%;
-                padding: 12px;
-                margin-top: 15px;
-                background: #2ecc71;
-                border: none;
-                color: white;
-                font-size: 16px;
-                border-radius: 8px;
-            }
-        </style>
-    </head>
-
-    <body>
-        <div class="login-box">
-            <h2>Login</h2>
-
-            <form method="POST" action="/login-check">
-                <input type="text" name="user" placeholder="Username">
-                <input type="password" name="password" placeholder="Password">
-                <button type="submit">Entrar</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    """
-
-@app.route("/login-check", methods=["POST"])
-@app.route("/login-check", methods=["POST"])
-def login_check():
-
-    user = request.form["user"]
-    password = request.form["password"]
-
-    conn = sqlite3.connect("database.db")
-    c = conn.cursor()
-
-    c.execute("SELECT * FROM users WHERE username=? AND password=?", (user, password))
-    result = c.fetchone()
-
-    conn.close()
-
-    if result:
-        session["logged"] = True
-        session["user"] = user
-        return redirect("/dashboard")
-
-    return "Login incorrect"
-    @app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
-
+# =====================================================
+# RUN
+# =====================================================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
