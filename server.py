@@ -179,6 +179,9 @@ def process_files():
     materials = 0
     tools = 0
 
+    # Detectar cliente automáticamente
+    client = "General"
+
     for _, row in df.iterrows():
 
         text = str(row).lower()
@@ -198,20 +201,45 @@ def process_files():
         if "tool" in text or "drill" in text or "saw" in text:
             tools += amount
 
+        # detectar cliente si aparece nombre
+        if "client" in text:
+            client = text
+
     # -----------------------------
-    # CREAR ARCHIVO POR MES
+    # ARCHIVO POR MES
     # -----------------------------
     month = pd.Timestamp.now().strftime("%B")
-    file_name = f"{month}.xlsx"
+    month_file = f"{month}.xlsx"
 
-    with pd.ExcelWriter(file_name, engine="openpyxl") as writer:
+    # -----------------------------
+    # ARCHIVO ANUAL
+    # -----------------------------
+    year = pd.Timestamp.now().strftime("%Y")
+    year_file = f"{year}.xlsx"
+
+    # -----------------------------
+    # ARCHIVO POR CLIENTE
+    # -----------------------------
+    client_file = f"{client}.xlsx"
+
+    summary = pd.DataFrame({
+        "Category": ["Income", "Expenses", "Fuel", "Materials", "Tools"],
+        "Total": [income, expenses, fuel, materials, tools]
+    })
+
+    # Guardar archivo mensual
+    with pd.ExcelWriter(month_file, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Transactions")
+        summary.to_excel(writer, index=False, sheet_name="Summary")
 
-        summary = pd.DataFrame({
-            "Category": ["Income", "Expenses", "Fuel", "Materials", "Tools"],
-            "Total": [income, expenses, fuel, materials, tools]
-        })
+    # Guardar archivo anual
+    with pd.ExcelWriter(year_file, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Transactions")
+        summary.to_excel(writer, index=False, sheet_name="Summary")
 
+    # Guardar archivo por cliente
+    with pd.ExcelWriter(client_file, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Transactions")
         summary.to_excel(writer, index=False, sheet_name="Summary")
 
     return jsonify({
@@ -220,7 +248,9 @@ def process_files():
         "fuel": fuel,
         "materials": materials,
         "tools": tools,
-        "file": file_name
+        "month_file": month_file,
+        "year_file": year_file,
+        "client_file": client_file
     })
 # -----------------------------------------
 # Mostrar IP para abrir desde el celular
