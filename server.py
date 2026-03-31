@@ -1,63 +1,59 @@
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory
 import os
 import cv2
 import pytesseract
-import pandas as pd
+import sqlite3
 import re
 from datetime import datetime
 import platform
 
-# ----------------------------------------------------
-# APP CONFIG
-# ----------------------------------------------------
-
 app = Flask(__name__)
 
 UPLOAD_FOLDER = "uploads"
-EXCEL_FILE = "accounting_data.xlsx"
+DB_FILE = "accounting.db"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# ----------------------------------------------------
-# TESSERACT CONFIG (WINDOWS + RENDER)
-# ----------------------------------------------------
+# ------------------------------------
+# TESSERACT CONFIG
+# ------------------------------------
 
 if platform.system() == "Windows":
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 else:
     pytesseract.pytesseract.tesseract_cmd = "tesseract"
 
-# ----------------------------------------------------
-# CREATE EXCEL FILE (IF NOT EXISTS)
-# ----------------------------------------------------
+# ------------------------------------
+# DATABASE
+# ------------------------------------
 
-if not os.path.exists(EXCEL_FILE):
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
 
-    df = pd.DataFrame(columns=[
-        "Date",
-        "Month",
-        "Type",
-        "Client / Store",
-        "Invoice Number",
-        "Category",
-        "Subtotal",
-        "Tax",
-        "Amount"
-    ])
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT,
+            month TEXT,
+            type TEXT,
+            client TEXT,
+            invoice TEXT,
+            category TEXT,
+            subtotal REAL,
+            tax REAL,
+            total REAL
+        )
+    """)
 
-    df.to_excel(EXCEL_FILE, index=False)
+    conn.commit()
+    conn.close()
 
-# ----------------------------------------------------
-# HOME PAGE
-# ----------------------------------------------------
+init_db()
 
-@app.route("/")
-def home():
-    return send_from_directory(".", "index.html")
-
-# ----------------------------------------------------
-# IMAGE PREPROCESSING (OPTIMIZED FOR MOBILE)
-# ----------------------------------------------------
+# ------------------------------------
+# IMAGE PREPROCESSING
+# ------------------------------------
 
 def preprocess_image(path):
 
@@ -66,31 +62,24 @@ def preprocess_image(path):
     if img is None:
         return None
 
-    # Resize but keep aspect ratio
-    h, w = img.shape[:2]
-    scale = 1000 / max(h, w)
-    img = cv2.resize(img, (int(w * scale), int(h * scale)))
-
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    gray = cv2.GaussianBlur(gray, (5,5), 0)
 
     gray = cv2.adaptiveThreshold(
-        gray,
-        255,
+        gray,255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        11,
-        2
+        11,2
     )
 
     return gray
 
-# ----------------------------------------------------
+# ------------------------------------
 # OCR
-# ----------------------------------------------------
+# ------------------------------------
 
-def read_text_from_image(path):
+def read_text(path):
 
     processed = preprocess_image(path)
 
@@ -100,11 +89,11 @@ def read_text_from_image(path):
     text = pytesseract.image_to_string(processed)
     return text.lower()
 
-# ----------------------------------------------------
-# SMART EXTRACTION
-# ----------------------------------------------------
+# ------------------------------------
+# DATA EXTRACTION
+# ------------------------------------
 
-def extract_accounting_data(text):
+def extract_data(text):
 
     data = {
         "date": datetime.now().strftime("%Y-%m-%d"),
@@ -115,180 +104,151 @@ def extract_accounting_data(text):
         "total": 0
     }
 
-    # DATE
-    date_patterns = [
-        r"\d{2}/\d{2}/\d{4}",
-        r"\d{4}-\d{2}-\d{2}",
-        r"\d{2}-\d{2}-\d{4}"
-    ]
+    total = re.findall(r"\d+\.\d{2}", text)
 
-    for pattern in date_patterns:
-        match = re.search(pattern, text)
-        if match:
-            data["date"] = match.group()
-            break
+    if total:
+        data["total"] = max([float(x) for x in total])
 
-    # INVOICE NUMBER
     inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
     if inv:
         data["invoice"] = inv.group(2)
 
-    # SUBTOTAL
-    sub = re.search(r"subtotal\s*\$?\s*(\d+\.\d{2})", text)
-    if sub:
-        data["subtotal"] = float(sub.group(1))
-
-    # TAX
-    tax = re.search(r"(tax|vat)\s*\$?\s*(\d+\.\d{2})", text)
-    if tax:
-        data["tax"] = float(tax.group(2))
-
-    # TOTAL
-    total = re.search(r"(total|amount due)\s*\$?\s*(\d+\.\d{2})", text)
-    if total:
-        data["total"] = float(total.group(2))
-    else:
-        amounts = re.findall(r"\d+\.\d{2}", text)
-        if amounts:
-            data["total"] = max([float(x) for x in amounts])
-
-    # CLIENT NAME
-    lines = text.split("\n")
-
-    for line in lines[:10]:
-        line = line.strip()
-
-        if len(line) > 4 and len(line) < 40:
-            if not any(x in line.lower() for x in ["invoice","total","date","tax","receipt"]):
-                data["client"] = line.title()
-                break
-
     return data
 
-# ----------------------------------------------------
-# AUTO EXPENSE CLASSIFICATION
-# ----------------------------------------------------
-
-def classify_expense(text):
-
-    if "gas" in text or "fuel" in text:
-        return "Fuel"
-
-    if any(w in text for w in ["drill","hammer","tool","saw","blade"]):
-        return "Tools"
-
-    if any(w in text for w in ["wood","cement","paint","pipe","pvc","tile","brick"]):
-        return "Materials"
-
-    if any(w in text for w in ["restaurant","food","cafe","coffee"]):
-        return "Food"
-
-    return "Other Expense"
-
-# ----------------------------------------------------
+# ------------------------------------
 # SAVE RECORD
-# ----------------------------------------------------
+# ------------------------------------
 
 def save_record(data, record_type, text):
 
-    df = pd.read_excel(EXCEL_FILE)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
 
     month = datetime.now().strftime("%Y-%m")
 
-    new_row = pd.DataFrame([{
-        "Date": data["date"],
-        "Month": month,
-        "Type": record_type,
-        "Client / Store": data["client"],
-        "Invoice Number": data["invoice"],
-        "Category": classify_expense(text),
-        "Subtotal": data["subtotal"],
-        "Tax": data["tax"],
-        "Amount": data["total"]
-    }])
+    c.execute("""
+        INSERT INTO records (date, month, type, client, invoice, category, subtotal, tax, total)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        data["date"],
+        month,
+        record_type,
+        data["client"],
+        data["invoice"],
+        "Expense",
+        data["subtotal"],
+        data["tax"],
+        data["total"]
+    ))
 
-    df = pd.concat([df, new_row], ignore_index=True)
-    df.to_excel(EXCEL_FILE, index=False)
+    conn.commit()
+    conn.close()
 
-# ----------------------------------------------------
+# ------------------------------------
 # TOTALS
-# ----------------------------------------------------
+# ------------------------------------
 
-def calculate_totals():
+def get_totals():
 
-    df = pd.read_excel(EXCEL_FILE)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
 
-    income = df[df["Type"] == "Income"]["Amount"].sum()
-    expenses = df[df["Type"] == "Expense"]["Amount"].sum()
+    c.execute("SELECT SUM(total) FROM records WHERE type='Income'")
+    income = c.fetchone()[0] or 0
+
+    c.execute("SELECT SUM(total) FROM records WHERE type='Expense'")
+    expenses = c.fetchone()[0] or 0
+
+    conn.close()
 
     profit = income - expenses
     annual = profit * 12
 
     return income, expenses, profit, annual
 
-# ----------------------------------------------------
+# ------------------------------------
 # PROCESS FILE
-# ----------------------------------------------------
+# ------------------------------------
 
 @app.route("/process-file", methods=["POST"])
 def process_file():
 
-    try:
+    if "file" not in request.files:
+        return jsonify({"error": "file missing"}), 400
 
-        if "file" not in request.files:
-            return jsonify({"error": "file not received"}), 400
+    file = request.files["file"]
 
-        file = request.files["file"]
+    filename = "upload.jpg"
+    path = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(path)
 
-        if file.filename == "":
-            return jsonify({"error": "empty filename"}), 400
+    text = read_text(path)
+    data = extract_data(text)
 
-        filename = "upload.jpg"
-        path = os.path.join(UPLOAD_FOLDER, filename)
-
-        file.save(path)
-
-        text = read_text_from_image(path)
-
-        data = extract_accounting_data(text)
-
-        if data["total"] == 0:
-            income, expenses, profit, annual = calculate_totals()
-            return jsonify({
-                "income": float(income),
-                "expenses": float(expenses),
-                "profit": float(profit),
-                "annual": float(annual)
-            })
-
-        if "deposit" in text or "payment received" in text:
-            save_record(data, "Income", text)
-        else:
-            save_record(data, "Expense", text)
-
-        income, expenses, profit, annual = calculate_totals()
-
+    if data["total"] == 0:
+        income, expenses, profit, annual = get_totals()
         return jsonify({
-            "income": float(income),
-            "expenses": float(expenses),
-            "profit": float(profit),
-            "annual": float(annual)
+            "income": income,
+            "expenses": expenses,
+            "profit": profit,
+            "annual": annual
         })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    if "deposit" in text or "payment received" in text:
+        save_record(data, "Income", text)
+    else:
+        save_record(data, "Expense", text)
 
-# ----------------------------------------------------
-# DOWNLOAD EXCEL
-# ----------------------------------------------------
+    income, expenses, profit, annual = get_totals()
 
-@app.route("/download")
-def download():
-    return send_file(EXCEL_FILE, as_attachment=True)
+    return jsonify({
+        "income": income,
+        "expenses": expenses,
+        "profit": profit,
+        "annual": annual
+    })
 
-# ----------------------------------------------------
-# RUN SERVER
-# ----------------------------------------------------
+# ------------------------------------
+# MONTHLY REPORT (for charts)
+# ------------------------------------
+
+@app.route("/monthly-report")
+def monthly():
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+
+    c.execute("""
+        SELECT month, SUM(total)
+        FROM records
+        GROUP BY month
+        ORDER BY month
+    """)
+
+    rows = c.fetchall()
+    conn.close()
+
+    data = []
+
+    for r in rows:
+        data.append({
+            "Month": r[0],
+            "Amount": r[1]
+        })
+
+    return jsonify(data)
+
+# ------------------------------------
+# HOME
+# ------------------------------------
+
+@app.route("/")
+def home():
+    return send_from_directory(".", "index.html")
+
+# ------------------------------------
+# RUN
+# ------------------------------------
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
