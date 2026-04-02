@@ -18,8 +18,12 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # TESSERACT CONFIG
 # ------------------------------------
 
-if platform.system() == "Windows":
-    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+import shutil
+
+tesseract_path = shutil.which("tesseract")
+
+if tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
 else:
     pytesseract.pytesseract.tesseract_cmd = "tesseract"
 
@@ -57,7 +61,7 @@ init_db()
 
 def preprocess_image(path):
 
-    img = cv2.imread(path)
+  img = cv2.resize(img, (800, 1000))
 
     if img is None:
         return None
