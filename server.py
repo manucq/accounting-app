@@ -71,30 +71,38 @@ def ocr_space(file):
 
     compressed = compress_image(file)
 
-    response = requests.post(
-        "https://api.ocr.space/parse/image",
-        files={"file": ("image.jpg", compressed, "image/jpeg")},
-        data={
-            "apikey": API_KEY,
-            "language": "eng"
-        },
-        timeout=10
-    )
-
-    result = response.json()
-
-    print("OCR RESPONSE:", result)
-
-    if result.get("IsErroredOnProcessing"):
-        return ""
-
     try:
-        text = result["ParsedResults"][0]["ParsedText"].lower()
+        response = requests.post(
+            "https://api.ocr.space/parse/image",
+            files={"file": ("image.jpg", compressed, "image/jpeg")},
+            data={
+                "apikey": API_KEY,
+                "language": "eng"
+            },
+            timeout=20   # ⬅️ MÁS TIEMPO (clave)
+        )
+
+        result = response.json()
+
+        print("OCR RESPONSE:", result)
+
+        if result.get("IsErroredOnProcessing"):
+            return ""
+
+        text = result["ParsedResults"][0].get("ParsedText", "").lower()
+
         print("==== TEXTO OCR ====")
         print(text)
         print("===================")
+
         return text
-    except:
+
+    except requests.exceptions.Timeout:
+        print("⏱ OCR TIMEOUT")
+        return ""
+
+    except Exception as e:
+        print("❌ OCR ERROR:", str(e))
         return ""
 
 # ---------------------------
