@@ -12,6 +12,9 @@ DB_FILE = "accounting.db"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# 🔑 PON TU API KEY AQUÍ
+API_KEY = "K82953514288957"
+
 # ---------------------------
 # DATABASE
 # ---------------------------
@@ -37,7 +40,7 @@ def init_db():
 init_db()
 
 # ---------------------------
-# EXTRACT DATA
+# EXTRACT DATA (PRO MEJORADO)
 # ---------------------------
 
 def extract_data(text):
@@ -49,41 +52,34 @@ def extract_data(text):
         "total": 0
     }
 
-    # LIMPIEZA
     text = text.lower()
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    # -----------------------
-    # TOTAL (MEJORADO)
-    # -----------------------
-    total_patterns = [
+    # TOTAL (inteligente)
+    patterns = [
         r"total\s*\$?\s*(\d+[.,]\d{2})",
         r"amount\s*due\s*\$?\s*(\d+[.,]\d{2})",
         r"balance\s*\$?\s*(\d+[.,]\d{2})"
     ]
 
-    for pattern in total_patterns:
-        match = re.search(pattern, text)
-        if match:
-            data["total"] = float(match.group(1).replace(",", "."))
+    for p in patterns:
+        m = re.search(p, text)
+        if m:
+            data["total"] = float(m.group(1).replace(",", "."))
             break
 
-    # fallback → mayor número
+    # fallback
     if data["total"] == 0:
         amounts = re.findall(r"\d+[.,]\d{2}", text)
         if amounts:
             data["total"] = max([float(x.replace(",", ".")) for x in amounts])
 
-    # -----------------------
-    # INVOICE
-    # -----------------------
+    # invoice
     inv = re.search(r"(invoice|inv|bill)[\s#:]*([a-z0-9-]+)", text)
     if inv:
         data["invoice"] = inv.group(2)
 
-    # -----------------------
-    # CLIENT (MUCHO MEJOR)
-    # -----------------------
+    # client (mejorado)
     for line in lines[:8]:
         if (
             3 < len(line) < 40
@@ -100,7 +96,6 @@ def extract_data(text):
 # ---------------------------
 
 def save(data, type_):
-
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -123,7 +118,6 @@ def save(data, type_):
 # ---------------------------
 
 def totals():
-
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -136,90 +130,74 @@ def totals():
     conn.close()
 
     profit = income - expenses
-
-    return income, expenses, profit, profit*12
+    return income, expenses, profit, profit * 12
 
 # ---------------------------
-# PROCESS FILE (ESTABLE)
+# OCR FUNCTION (ESTABLE)
+# ---------------------------
+
+def ocr_space(file):
+
+    response = requests.post(
+        "https://api.ocr.space/parse/image",
+        files={"file": (file.filename, file.stream, file.content_type)},
+        data={
+            "apikey": API_KEY,
+            "language": "eng"
+        },
+        timeout=10
+    )
+
+    result = response.json()
+
+    print("OCR RESPONSE:", result)
+
+    if result.get("IsErroredOnProcessing"):
+        return ""
+
+    try:
+        return result["ParsedResults"][0]["ParsedText"].lower()
+    except:
+        return ""
+
+# ---------------------------
+# PROCESS FILE
 # ---------------------------
 
 @app.route("/process-file", methods=["POST"])
 def process_file():
-    try:
-        file = request.files.get("file")
 
-        if not file:
-            return jsonify({"error": "No file"}), 400
+    file = request.files.get("file")
 
-        filename = file.filename.lower()
+    if not file:
+        return jsonify({"error": "no file"}), 400
 
-        # 🔥 detectar tipo archivo
-        if filename.endswith(".pdf"):
-            file_type = "PDF"
-        elif filename.endswith(".png"):
-            file_type = "PNG"
-        else:
-            file_type = "JPG"
+    # OCR
+    text = ocr_space(file)
 
-        # 🔥 limitar tamaño (evita crash)
-        file.stream.seek(0, os.SEEK_END)
-        size = file.stream.tell()
-        file.stream.seek(0)
+    print("==== TEXTO OCR ====")
+    print(text)
+    print("===================")
 
-        if size > 2 * 1024 * 1024:
-            return jsonify({"error": "File too large (max 2MB)"}), 400
+    data = extract_data(text)
 
-        # 🔥 OCR con timeout
-        try:
-            response = requests.post(
-                "https://api.ocr.space/parse/image",
-                 files={"file": (file.filename, file.stream, file.content_type)},
-                 data={
-                     "apikey": API_KEY,
-                     "language": "eng",
-                     "isOverlayRequired": False
-                 },
-                 timeout=10
-        )
-        except:
-            return jsonify({"error": "OCR timeout, try smaller image"}), 500
-
-        result = response.json()
-
-        print("OCR RESPONSE:", result)
-
-        if result.get("IsErroredOnProcessing"):
-            return jsonify({"error": str(result.get("ErrorMessage"))}), 500
-
-        text = parsed["ParsedResults"][0].get("ParsedText", "").lower()
-
-        print("==== TEXTO OCR ====")
-        print(text)
-        print("===================")
-
-        data = extract_data(text)
-
-        # si no detecta monto
-        if data["total"] == 0:
-            return jsonify(dict(zip(
-                ["income","expenses","profit","annual"],
-                totals()
-            )))
-
-        # guardar
-        if "deposit" in text or "payment" in text:
-            save(data, "Income")
-        else:
-            save(data, "Expense")
-
+    # si no detecta monto → no guarda
+    if data["total"] == 0:
         return jsonify(dict(zip(
             ["income","expenses","profit","annual"],
             totals()
         )))
 
-    except Exception as e:
-        print("ERROR:", str(e))
-        return jsonify({"error": str(e)}), 500
+    # tipo
+    if "deposit" in text or "payment received" in text:
+        save(data, "Income")
+    else:
+        save(data, "Expense")
+
+    return jsonify(dict(zip(
+        ["income","expenses","profit","annual"],
+        totals()
+    )))
 
 # ---------------------------
 # HOME
@@ -234,4 +212,4 @@ def home():
 # ---------------------------
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run()
