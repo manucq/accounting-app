@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - Accounting App</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #0b3d91;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.container {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    width: 320px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+h2 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+input {
+    width: 100%;
+    padding: 10px;
+    margin: 8px 0;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+button {
+    width: 100%;
+    padding: 10px;
+    background: #0b3d91;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #062b63;
+}
+
+.toggle {
+    text-align: center;
+    margin-top: 10px;
+    cursor: pointer;
+    color: #0b3d91;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2 id="title">Login</h2>
+
+<form method="POST" id="form">
+    <input name="username" placeholder="Username" required>
+    <input name="password" type="password" placeholder="Password" required>
+    <button type="submit">Login</button>
+</form>
+
+<div class="toggle" onclick="toggleForm()">Create account</div>
+
+</div>
+
+<script>
+let isLogin = true;
+
+function toggleForm(){
+    const form = document.getElementById("form");
+    const title = document.getElementById("title");
+
+    if(isLogin){
+        form.action = "/register";
+        title.innerText = "Register";
+        form.querySelector("button").innerText = "Create Account";
+        document.querySelector(".toggle").innerText = "Back to login";
+    } else {
+        form.action = "/";
+        title.innerText = "Login";
+        form.querySelector("button").innerText = "Login";
+        document.querySelector(".toggle").innerText = "Create account";
+    }
+
+    isLogin = !isLogin;
+}
+</script>
+
+</body>
+</html>

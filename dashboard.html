@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #f4f6f8;
+}
+
+.header {
+    background: #0b3d91;
+    color: white;
+    padding: 20px;
+    text-align: center;
+    font-size: 22px;
+}
+
+.container {
+    padding: 20px;
+    max-width: 1100px;
+    margin: auto;
+}
+
+.upload-box {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.card h3 {
+    margin: 0;
+    color: #666;
+}
+
+.card h1 {
+    margin-top: 10px;
+}
+
+canvas {
+    margin-top: 30px;
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">📊 Accounting Dashboard PRO</div>
+
+<div class="container">
+
+<div class="upload-box">
+    <input type="file" id="file">
+    <button onclick="upload()">Upload Receipt</button>
+</div>
+
+<div class="cards">
+    <div class="card">
+        <h3>Income</h3>
+        <h1 id="income">$0</h1>
+    </div>
+
+    <div class="card">
+        <h3>Expenses</h3>
+        <h1 id="expenses">$0</h1>
+    </div>
+
+    <div class="card">
+        <h3>Profit</h3>
+        <h1 id="profit">$0</h1>
+    </div>
+
+    <div class="card">
+        <h3>Annual</h3>
+        <h1 id="annual">$0</h1>
+    </div>
+</div>
+
+<canvas id="chart"></canvas>
+
+</div>
+
+<script>
+
+async function upload(){
+
+    const file = document.getElementById("file").files[0];
+
+    if(!file){
+        alert("Select file first");
+        return;
+    }
+
+    const fd = new FormData();
+    fd.append("file", file);
+
+    const res = await fetch("/process-file", {
+        method: "POST",
+        body: fd
+    });
+
+    const data = await res.json();
+
+    updateUI(data);
+}
+
+function updateUI(data){
+
+    document.getElementById("income").innerText = "$" + data.income.toFixed(2);
+    document.getElementById("expenses").innerText = "$" + data.expenses.toFixed(2);
+    document.getElementById("profit").innerText = "$" + data.profit.toFixed(2);
+    document.getElementById("annual").innerText = "$" + data.annual.toFixed(2);
+
+    drawChart(data);
+}
+
+function drawChart(data){
+
+    const ctx = document.getElementById("chart").getContext("2d");
+
+    if(window.chart) window.chart.destroy();
+
+    window.chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels: ["Income", "Expenses", "Profit"],
+            datasets: [{
+                label: "Financial Overview",
+                data: [data.income, data.expenses, data.profit]
+            }]
+        }
+    });
+}
+
+</script>
+
+</body>
+</html>
