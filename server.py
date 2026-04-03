@@ -46,21 +46,30 @@ init_db()
 # ---------------------------
 
 def compress_image(file):
+
     try:
         img = Image.open(file.stream)
 
+        # convertir a RGB
         if img.mode != "RGB":
             img = img.convert("RGB")
 
+        # 🔥 REDUCIR TAMAÑO (CLAVE)
+        img.thumbnail((800, 800))  # máximo 800px
+
         buffer = io.BytesIO()
 
-        # 🔥 compresión fuerte (clave)
-        img.save(buffer, format="JPEG", quality=30)
+        # 🔥 compresión fuerte
+        img.save(buffer, format="JPEG", quality=25, optimize=True)
 
         buffer.seek(0)
+
+        print("SIZE AFTER COMPRESS (KB):", len(buffer.getvalue()) / 1024)
+
         return buffer
 
-    except:
+    except Exception as e:
+        print("ERROR COMPRESS:", e)
         return file.stream
 
 # ---------------------------
@@ -74,12 +83,14 @@ def ocr_space(file):
     try:
         response = requests.post(
             "https://api.ocr.space/parse/image",
-            files={"file": ("image.jpg", compressed, "image/jpeg")},
+            files={
+                "file": ("image.jpg", compressed, "image/jpeg")
+            },
             data={
                 "apikey": API_KEY,
                 "language": "eng"
             },
-            timeout=20   # ⬅️ MÁS TIEMPO (clave)
+            timeout=20
         )
 
         result = response.json()
@@ -97,12 +108,8 @@ def ocr_space(file):
 
         return text
 
-    except requests.exceptions.Timeout:
-        print("⏱ OCR TIMEOUT")
-        return ""
-
     except Exception as e:
-        print("❌ OCR ERROR:", str(e))
+        print("OCR ERROR:", e)
         return ""
 
 # ---------------------------
