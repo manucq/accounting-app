@@ -48,28 +48,27 @@ init_db()
 def compress_image(file):
 
     try:
+        file.stream.seek(0)
         img = Image.open(file.stream)
 
-        # convertir a RGB
-        if img.mode != "RGB":
-            img = img.convert("RGB")
+        # Convertir a RGB (por si es PNG o raro)
+        img = img.convert("RGB")
 
-        # 🔥 REDUCIR TAMAÑO (CLAVE)
-        img.thumbnail((800, 800))  # máximo 800px
+        # Reducir tamaño
+        img.thumbnail((800, 800))
 
         buffer = io.BytesIO()
-
-        # 🔥 compresión fuerte
-        img.save(buffer, format="JPEG", quality=25, optimize=True)
-
+        img.save(buffer, format="JPEG", quality=30)
         buffer.seek(0)
 
-        print("SIZE AFTER COMPRESS (KB):", len(buffer.getvalue()) / 1024)
-
+        print("OK IMAGE COMPRESSED")
         return buffer
 
     except Exception as e:
-        print("ERROR COMPRESS:", e)
+        print("❌ NOT IMAGE, USING RAW FILE:", e)
+
+        # 🔥 fallback: enviar archivo tal cual (PDF o raro)
+        file.stream.seek(0)
         return file.stream
 
 # ---------------------------
@@ -84,13 +83,14 @@ def ocr_space(file):
         response = requests.post(
             "https://api.ocr.space/parse/image",
             files={
-                "file": ("image.jpg", compressed, "image/jpeg")
+                "file": ("file", compressed)
             },
             data={
                 "apikey": API_KEY,
-                "language": "eng"
+                "language": "eng",
+                "isOverlayRequired": False
             },
-            timeout=20
+            timeout=25
         )
 
         result = response.json()
@@ -100,7 +100,12 @@ def ocr_space(file):
         if result.get("IsErroredOnProcessing"):
             return ""
 
-        text = result["ParsedResults"][0].get("ParsedText", "").lower()
+        parsed = result.get("ParsedResults")
+
+        if not parsed:
+            return ""
+
+        text = parsed[0].get("ParsedText", "").lower()
 
         print("==== TEXTO OCR ====")
         print(text)
