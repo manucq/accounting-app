@@ -4,7 +4,6 @@ import sqlite3
 import re
 from datetime import datetime
 import pdfplumber
-from PIL import Image
 import requests
 
 app = Flask(__name__)
@@ -39,12 +38,14 @@ def init_db():
 init_db()
 
 # ---------------------------
-# OCR (API GRATIS)
+# OCR API
 # ---------------------------
 
 def ocr_image(file):
 
-    API_KEY = "K82953514288957"  # 👈 PON TU KEY AQUÍ
+    API_KEY = "K82953514288957"
+
+    file.seek(0)
 
     response = requests.post(
         "https://api.ocr.space/parse/image",
@@ -56,6 +57,8 @@ def ocr_image(file):
     )
 
     result = response.json()
+
+    print("OCR RESPONSE:", result)
 
     try:
         return result["ParsedResults"][0]["ParsedText"].lower()
@@ -76,7 +79,6 @@ def read_file(file, filename):
         return text.lower()
 
     else:
-        file.seek(0)
         return ocr_image(file)
 
 # ---------------------------
@@ -92,18 +94,17 @@ def extract_data(text):
         "total": 0
     }
 
-    # TOTAL
     amounts = re.findall(r"\d+\.\d{2}", text)
+
     if amounts:
         data["total"] = max([float(x) for x in amounts])
 
-    # INVOICE
     inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
     if inv:
         data["invoice"] = inv.group(2)
 
-    # CLIENT (línea válida)
     lines = text.split("\n")
+
     for line in lines[:10]:
         line = line.strip()
         if len(line) > 4 and len(line) < 40:
@@ -213,4 +214,5 @@ def home():
 # ---------------------------
 
 if __name__ == "__main__":
+    app.run()
     app.run()
