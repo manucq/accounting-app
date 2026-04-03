@@ -174,9 +174,9 @@ def process_file():
 
         text = read_file(file, filename)
 
-         print("==== TEXTO OCR ====")
-         print(text)
-         print("===================")
+        print("==== TEXTO OCR ====")
+        print(text)
+        print("===================")
 
         data = extract_data(text)
 
