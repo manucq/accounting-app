@@ -156,8 +156,8 @@ async function uploadFile() {
         });
 
         const data = await response.json();
-
         updateCards(data);
+        loadMonthlyReport();
 
         if(data.error){
             alert("ERROR: " + data.error);
