@@ -49,21 +49,47 @@ def extract_data(text):
         "total": 0
     }
 
-    # TOTAL
-    amounts = re.findall(r"\d+\.\d{2}", text)
-    if amounts:
-        data["total"] = max([float(x) for x in amounts])
+    # LIMPIEZA
+    text = text.lower()
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
 
+    # -----------------------
+    # TOTAL (MEJORADO)
+    # -----------------------
+    total_patterns = [
+        r"total\s*\$?\s*(\d+[.,]\d{2})",
+        r"amount\s*due\s*\$?\s*(\d+[.,]\d{2})",
+        r"balance\s*\$?\s*(\d+[.,]\d{2})"
+    ]
+
+    for pattern in total_patterns:
+        match = re.search(pattern, text)
+        if match:
+            data["total"] = float(match.group(1).replace(",", "."))
+            break
+
+    # fallback → mayor número
+    if data["total"] == 0:
+        amounts = re.findall(r"\d+[.,]\d{2}", text)
+        if amounts:
+            data["total"] = max([float(x.replace(",", ".")) for x in amounts])
+
+    # -----------------------
     # INVOICE
-    inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
+    # -----------------------
+    inv = re.search(r"(invoice|inv|bill)[\s#:]*([a-z0-9-]+)", text)
     if inv:
         data["invoice"] = inv.group(2)
 
-    # CLIENT
-    lines = text.split("\n")
-    for line in lines[:10]:
-        line = line.strip()
-        if len(line) > 4 and not any(x in line for x in ["invoice","total","date","tax"]):
+    # -----------------------
+    # CLIENT (MUCHO MEJOR)
+    # -----------------------
+    for line in lines[:8]:
+        if (
+            3 < len(line) < 40
+            and not any(x in line for x in ["total","tax","date","invoice","amount","receipt"])
+            and not re.search(r"\d", line)
+        ):
             data["client"] = line.title()
             break
 
@@ -147,14 +173,14 @@ def process_file():
         try:
             response = requests.post(
                 "https://api.ocr.space/parse/image",
-                files={"file": (file.filename, file.stream)},
-                data={
-                    "apikey": "helloworld",
-                    "language": "eng",
-                    "filetype": file_type
-                },
-                timeout=15
-            )
+                 files={"file": (file.filename, file.stream, file.content_type)},
+                 data={
+                     "apikey": API_KEY,
+                     "language": "eng",
+                     "isOverlayRequired": False
+                 },
+                 timeout=10
+        )
         except:
             return jsonify({"error": "OCR timeout, try smaller image"}), 500
 
@@ -165,7 +191,7 @@ def process_file():
         if result.get("IsErroredOnProcessing"):
             return jsonify({"error": str(result.get("ErrorMessage"))}), 500
 
-        text = result["ParsedResults"][0]["ParsedText"].lower()
+        text = parsed["ParsedResults"][0].get("ParsedText", "").lower()
 
         print("==== TEXTO OCR ====")
         print(text)
