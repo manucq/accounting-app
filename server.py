@@ -3,7 +3,6 @@ import os
 import sqlite3
 import re
 from datetime import datetime
-import pdfplumber
 import requests
 
 app = Flask(__name__)
@@ -38,50 +37,6 @@ def init_db():
 init_db()
 
 # ---------------------------
-# OCR API
-# ---------------------------
-
-def ocr_image(file):
-
-    API_KEY = "K82953514288957"
-
-    file.seek(0)
-
-    response = requests.post(
-        "https://api.ocr.space/parse/image",
-        files={"file": file},
-        data={
-            "apikey": API_KEY,
-            "language": "eng"
-        },
-    )
-
-    result = response.json()
-
-    print("OCR RESPONSE:", result)
-
-    try:
-        return result["ParsedResults"][0]["ParsedText"].lower()
-    except:
-        return ""
-
-# ---------------------------
-# READ FILE
-# ---------------------------
-
-def read_file(file, filename):
-
-    if filename.endswith(".pdf"):
-        with pdfplumber.open(file) as pdf:
-            text = ""
-            for page in pdf.pages:
-                text += page.extract_text() or ""
-        return text.lower()
-
-    else:
-        return ocr_image(file)
-
-# ---------------------------
 # EXTRACT DATA
 # ---------------------------
 
@@ -94,23 +49,23 @@ def extract_data(text):
         "total": 0
     }
 
+    # TOTAL
     amounts = re.findall(r"\d+\.\d{2}", text)
-
     if amounts:
         data["total"] = max([float(x) for x in amounts])
 
+    # INVOICE
     inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
     if inv:
         data["invoice"] = inv.group(2)
 
+    # CLIENT (primer texto válido)
     lines = text.split("\n")
-
     for line in lines[:10]:
         line = line.strip()
-        if len(line) > 4 and len(line) < 40:
-            if not any(x in line for x in ["invoice","total","date"]):
-                data["client"] = line.title()
-                break
+        if len(line) > 4 and not any(x in line for x in ["invoice","total","date","tax"]):
+            data["client"] = line.title()
+            break
 
     return data
 
@@ -156,24 +111,48 @@ def totals():
 
     profit = income - expenses
 
-    return income, expenses, profit, profit * 12
+    return income, expenses, profit, profit*12
 
 # ---------------------------
-# PROCESS FILE
+# PROCESS FILE (OCR REAL)
 # ---------------------------
 
 @app.route("/process-file", methods=["POST"])
 def process_file():
-
     try:
         file = request.files.get("file")
 
         if not file:
-            return jsonify({"error": "no file"}), 400
+            return jsonify({"error": "No file"}), 400
 
         filename = file.filename.lower()
 
-        text = read_file(file, filename)
+        # Detectar tipo
+        if filename.endswith(".pdf"):
+            file_type = "PDF"
+        elif filename.endswith(".png"):
+            file_type = "PNG"
+        else:
+            file_type = "JPG"
+
+        # OCR API
+        response = requests.post(
+            "https://api.ocr.space/parse/image",
+            files={"file": (file.filename, file.stream)},
+            data={
+                "apikey": "helloworld",
+                "language": "eng",
+                "filetype": file_type
+            }
+        )
+
+        result = response.json()
+        print("OCR RESPONSE:", result)
+
+        if result.get("IsErroredOnProcessing"):
+            return jsonify({"error": str(result.get("ErrorMessage"))}), 500
+
+        text = result["ParsedResults"][0]["ParsedText"].lower()
 
         print("==== TEXTO OCR ====")
         print(text)
@@ -214,5 +193,4 @@ def home():
 # ---------------------------
 
 if __name__ == "__main__":
-    app.run()
-    app.run()
+    app.run(host="0.0.0.0", port=5000)
