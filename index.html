@@ -140,11 +140,10 @@ canvas {
 <script>
 
 async function uploadFile() {
-
     const fileInput = document.getElementById("fileInput");
 
     if(fileInput.files.length === 0) {
-        alert("Select a file first");
+        alert("Selecciona un archivo");
         return;
     }
 
@@ -152,7 +151,6 @@ async function uploadFile() {
     formData.append("file", fileInput.files[0]);
 
     try {
-
         const response = await fetch("/process-file", {
             method: "POST",
             body: formData
@@ -160,76 +158,26 @@ async function uploadFile() {
 
         const data = await response.json();
 
+        console.log(data);
+
         if(data.error){
-            alert("Error: " + data.error);
+            alert("ERROR: " + data.error);
             return;
         }
 
         updateCards(data);
-        loadMonthlyReport();
 
-    } catch (error) {
-        alert("Upload failed");
-        console.log(error);
+    } catch (err) {
+        alert("Error subiendo archivo");
+        console.error(err);
     }
 }
 
 function updateCards(data) {
-
     document.getElementById("income").innerText = "$" + data.income.toFixed(2);
     document.getElementById("expenses").innerText = "$" + data.expenses.toFixed(2);
     document.getElementById("profit").innerText = "$" + data.profit.toFixed(2);
     document.getElementById("annual").innerText = "$" + data.annual.toFixed(2);
-
-    drawProfitChart(data.income, data.expenses);
-}
-
-function downloadExcel() {
-    window.location.href = "/download";
-}
-
-function drawProfitChart(income, expenses) {
-
-    const ctx = document.getElementById("profitChart").getContext("2d");
-
-    if(window.profitChart) window.profitChart.destroy();
-
-    window.profitChart = new Chart(ctx, {
-        type: "bar",
-        data: {
-            labels: ["Income", "Expenses"],
-            datasets: [{
-                label: "Financial Overview",
-                data: [income, expenses]
-            }]
-        }
-    });
-}
-
-async function loadMonthlyReport() {
-
-    const response = await fetch("/monthly-report");
-    const data = await response.json();
-
-    if(data.length === 0) return;
-
-    const labels = data.map(d => d.Month);
-    const values = data.map(d => d.Amount);
-
-    const ctx = document.getElementById("monthlyChart").getContext("2d");
-
-    if(window.monthlyChart) window.monthlyChart.destroy();
-
-    window.monthlyChart = new Chart(ctx, {
-        type: "line",
-        data: {
-            labels: labels,
-            datasets: [{
-                label: "Monthly Profit",
-                data: values
-            }]
-        }
-    });
 }
 
 </script>
