@@ -14,7 +14,7 @@ DB_FILE = "accounting.db"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-OCR_API_KEY = "K82953514288957"  # puedes cambiar luego
+OCR_API_KEY = "helloworld"
 
 # ---------------------------
 # DATABASE
@@ -41,30 +41,26 @@ def init_db():
 init_db()
 
 # ---------------------------
-# COMPRESS IMAGE (FIX iPhone + tamaño)
+# COMPRESS IMAGE
 # ---------------------------
 
 def compress_image(file):
-
     try:
         img = Image.open(file)
-
         img = img.convert("RGB")
         img.thumbnail((1200, 1200))
 
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=70)
-
         buffer.seek(0)
-        return buffer
 
-    except Exception as e:
-        print("❌ NOT IMAGE:", e)
+        return buffer
+    except:
         file.seek(0)
         return file
 
 # ---------------------------
-# OCR SPACE (ROBUSTO)
+# OCR FUNCTION
 # ---------------------------
 
 def ocr_space(file):
@@ -80,12 +76,10 @@ def ocr_space(file):
                 "language": "eng",
                 "OCREngine": 2
             },
-            timeout=20
+            timeout=15
         )
 
         result = response.json()
-
-        print("OCR RESPONSE:", result)
 
         if result.get("IsErroredOnProcessing"):
             return ""
@@ -97,12 +91,11 @@ def ocr_space(file):
 
         return ""
 
-    except Exception as e:
-        print("OCR ERROR:", e)
+    except:
         return ""
 
 # ---------------------------
-# EXTRACT DATA (MEJORADO)
+# EXTRACT DATA
 # ---------------------------
 
 def extract_data(text):
@@ -114,19 +107,16 @@ def extract_data(text):
         "total": 0
     }
 
-    # TOTAL (más inteligente)
     amounts = re.findall(r"\d+[.,]\d{2}", text)
 
     if amounts:
         values = [float(x.replace(",", ".")) for x in amounts]
         data["total"] = max(values)
 
-    # INVOICE
     inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
     if inv:
         data["invoice"] = inv.group(2)
 
-    # CLIENT (primera línea útil)
     for line in text.split("\n"):
         line = line.strip()
         if 5 < len(line) < 40 and not any(w in line for w in ["total","invoice","tax","date"]):
@@ -136,7 +126,7 @@ def extract_data(text):
     return data
 
 # ---------------------------
-# SAVE
+# SAVE DATA
 # ---------------------------
 
 def save(data, type_):
@@ -180,7 +170,7 @@ def totals():
     return income, expenses, profit, profit * 12
 
 # ---------------------------
-# PROCESS FILE (ULTRA ROBUSTO)
+# PROCESS FILE
 # ---------------------------
 
 @app.route("/process-file", methods=["POST"])
@@ -191,33 +181,17 @@ def process_file():
     if not file:
         return jsonify({"error": "no file"}), 400
 
-    filename = file.filename.lower()
-
-    # DETECTAR TIPO
-    if filename.endswith(".pdf"):
-        print("📄 PDF detectado")
-    elif filename.endswith((".jpg",".jpeg",".png",".heic",".webp")):
-        print("🖼️ Imagen detectada")
-    else:
-        print("⚠️ Tipo desconocido")
-
-    # OCR
     text = ocr_space(file)
 
-    print("==== TEXTO OCR ====")
-    print(text[:500])
-    print("===================")
-
     if not text:
-        # 👇 NUNCA deja todo en 0 vacío
         income, expenses, profit, annual = totals()
 
         return jsonify({
-            "income": float(income),
-            "expenses": float(expenses),
-            "profit": float(profit),
-            "annual": float(annual),
-            "warning": "No se pudo leer el archivo"
+            "income": income,
+            "expenses": expenses,
+            "profit": profit,
+            "annual": annual,
+            "warning": "No se pudo leer archivo"
         })
 
     data = extract_data(text)
@@ -226,10 +200,10 @@ def process_file():
         income, expenses, profit, annual = totals()
 
         return jsonify({
-            "income": float(income),
-            "expenses": float(expenses),
-            "profit": float(profit),
-            "annual": float(annual),
+            "income": income,
+            "expenses": expenses,
+            "profit": profit,
+            "annual": annual,
             "warning": "Monto no detectado"
         })
 
@@ -241,10 +215,10 @@ def process_file():
     income, expenses, profit, annual = totals()
 
     return jsonify({
-        "income": float(income),
-        "expenses": float(expenses),
-        "profit": float(profit),
-        "annual": float(annual)
+        "income": income,
+        "expenses": expenses,
+        "profit": profit,
+        "annual": annual
     })
 
 # ---------------------------
@@ -260,4 +234,4 @@ def home():
 # ---------------------------
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=10000)
