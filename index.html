@@ -157,7 +157,7 @@ async function uploadFile() {
 
         const data = await response.json();
 
-        console.log(data);
+        updateCards(data);
 
         if(data.error){
             alert("ERROR: " + data.error);
