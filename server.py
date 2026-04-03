@@ -7,7 +7,7 @@ import requests
 from PIL import Image
 import io
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 app.secret_key = "supersecretkey"
 
 DB = "accounting.db"
