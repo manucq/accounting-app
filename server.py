@@ -76,6 +76,7 @@ def read_file(file, filename):
         return text.lower()
 
     else:
+        file.seek(0)
         return ocr_image(file)
 
 # ---------------------------
