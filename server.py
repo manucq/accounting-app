@@ -4,6 +4,8 @@ import sqlite3
 import re
 from datetime import datetime
 import requests
+from PIL import Image
+import io
 
 app = Flask(__name__)
 
@@ -40,7 +42,63 @@ def init_db():
 init_db()
 
 # ---------------------------
-# EXTRACT DATA (PRO MEJORADO)
+# COMPRESS IMAGE (FIX 1MB)
+# ---------------------------
+
+def compress_image(file):
+    try:
+        img = Image.open(file.stream)
+
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
+        buffer = io.BytesIO()
+
+        # 🔥 compresión fuerte (clave)
+        img.save(buffer, format="JPEG", quality=30)
+
+        buffer.seek(0)
+        return buffer
+
+    except:
+        return file.stream
+
+# ---------------------------
+# OCR FUNCTION
+# ---------------------------
+
+def ocr_space(file):
+
+    compressed = compress_image(file)
+
+    response = requests.post(
+        "https://api.ocr.space/parse/image",
+        files={"file": ("image.jpg", compressed, "image/jpeg")},
+        data={
+            "apikey": API_KEY,
+            "language": "eng"
+        },
+        timeout=10
+    )
+
+    result = response.json()
+
+    print("OCR RESPONSE:", result)
+
+    if result.get("IsErroredOnProcessing"):
+        return ""
+
+    try:
+        text = result["ParsedResults"][0]["ParsedText"].lower()
+        print("==== TEXTO OCR ====")
+        print(text)
+        print("===================")
+        return text
+    except:
+        return ""
+
+# ---------------------------
+# EXTRACT DATA (MEJORADO)
 # ---------------------------
 
 def extract_data(text):
@@ -55,7 +113,7 @@ def extract_data(text):
     text = text.lower()
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-    # TOTAL (inteligente)
+    # TOTAL INTELIGENTE
     patterns = [
         r"total\s*\$?\s*(\d+[.,]\d{2})",
         r"amount\s*due\s*\$?\s*(\d+[.,]\d{2})",
@@ -79,7 +137,7 @@ def extract_data(text):
     if inv:
         data["invoice"] = inv.group(2)
 
-    # client (mejorado)
+    # client inteligente
     for line in lines[:8]:
         if (
             3 < len(line) < 40
@@ -133,34 +191,6 @@ def totals():
     return income, expenses, profit, profit * 12
 
 # ---------------------------
-# OCR FUNCTION (ESTABLE)
-# ---------------------------
-
-def ocr_space(file):
-
-    response = requests.post(
-        "https://api.ocr.space/parse/image",
-        files={"file": (file.filename, file.stream, file.content_type)},
-        data={
-            "apikey": API_KEY,
-            "language": "eng"
-        },
-        timeout=10
-    )
-
-    result = response.json()
-
-    print("OCR RESPONSE:", result)
-
-    if result.get("IsErroredOnProcessing"):
-        return ""
-
-    try:
-        return result["ParsedResults"][0]["ParsedText"].lower()
-    except:
-        return ""
-
-# ---------------------------
 # PROCESS FILE
 # ---------------------------
 
@@ -172,23 +202,16 @@ def process_file():
     if not file:
         return jsonify({"error": "no file"}), 400
 
-    # OCR
     text = ocr_space(file)
-
-    print("==== TEXTO OCR ====")
-    print(text)
-    print("===================")
 
     data = extract_data(text)
 
-    # si no detecta monto → no guarda
     if data["total"] == 0:
         return jsonify(dict(zip(
             ["income","expenses","profit","annual"],
             totals()
         )))
 
-    # tipo
     if "deposit" in text or "payment received" in text:
         save(data, "Income")
     else:
