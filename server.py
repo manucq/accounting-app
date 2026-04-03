@@ -59,7 +59,7 @@ def extract_data(text):
     if inv:
         data["invoice"] = inv.group(2)
 
-    # CLIENT (primer texto válido)
+    # CLIENT
     lines = text.split("\n")
     for line in lines[:10]:
         line = line.strip()
@@ -114,7 +114,7 @@ def totals():
     return income, expenses, profit, profit*12
 
 # ---------------------------
-# PROCESS FILE (OCR REAL)
+# PROCESS FILE (ESTABLE)
 # ---------------------------
 
 @app.route("/process-file", methods=["POST"])
@@ -127,7 +127,7 @@ def process_file():
 
         filename = file.filename.lower()
 
-        # Detectar tipo
+        # 🔥 detectar tipo archivo
         if filename.endswith(".pdf"):
             file_type = "PDF"
         elif filename.endswith(".png"):
@@ -135,18 +135,31 @@ def process_file():
         else:
             file_type = "JPG"
 
-        # OCR API
-        response = requests.post(
-            "https://api.ocr.space/parse/image",
-            files={"file": (file.filename, file.stream)},
-            data={
-                "apikey": "helloworld",
-                "language": "eng",
-                "filetype": file_type
-            }
-        )
+        # 🔥 limitar tamaño (evita crash)
+        file.stream.seek(0, os.SEEK_END)
+        size = file.stream.tell()
+        file.stream.seek(0)
+
+        if size > 2 * 1024 * 1024:
+            return jsonify({"error": "File too large (max 2MB)"}), 400
+
+        # 🔥 OCR con timeout
+        try:
+            response = requests.post(
+                "https://api.ocr.space/parse/image",
+                files={"file": (file.filename, file.stream)},
+                data={
+                    "apikey": "helloworld",
+                    "language": "eng",
+                    "filetype": file_type
+                },
+                timeout=15
+            )
+        except:
+            return jsonify({"error": "OCR timeout, try smaller image"}), 500
 
         result = response.json()
+
         print("OCR RESPONSE:", result)
 
         if result.get("IsErroredOnProcessing"):
@@ -160,12 +173,14 @@ def process_file():
 
         data = extract_data(text)
 
+        # si no detecta monto
         if data["total"] == 0:
             return jsonify(dict(zip(
                 ["income","expenses","profit","annual"],
                 totals()
             )))
 
+        # guardar
         if "deposit" in text or "payment" in text:
             save(data, "Income")
         else:
