@@ -3,6 +3,9 @@ import os
 import sqlite3
 import re
 from datetime import datetime
+import pdfplumber
+from PIL import Image
+import requests
 
 app = Flask(__name__)
 
@@ -36,7 +39,47 @@ def init_db():
 init_db()
 
 # ---------------------------
-# EXTRACT SIMPLE DATA
+# OCR (API GRATIS)
+# ---------------------------
+
+def ocr_image(file):
+
+    API_KEY = "K82953514288957"  # 👈 PON TU KEY AQUÍ
+
+    response = requests.post(
+        "https://api.ocr.space/parse/image",
+        files={"file": file},
+        data={
+            "apikey": API_KEY,
+            "language": "eng"
+        },
+    )
+
+    result = response.json()
+
+    try:
+        return result["ParsedResults"][0]["ParsedText"].lower()
+    except:
+        return ""
+
+# ---------------------------
+# READ FILE
+# ---------------------------
+
+def read_file(file, filename):
+
+    if filename.endswith(".pdf"):
+        with pdfplumber.open(file) as pdf:
+            text = ""
+            for page in pdf.pages:
+                text += page.extract_text() or ""
+        return text.lower()
+
+    else:
+        return ocr_image(file)
+
+# ---------------------------
+# EXTRACT DATA
 # ---------------------------
 
 def extract_data(text):
@@ -48,14 +91,24 @@ def extract_data(text):
         "total": 0
     }
 
+    # TOTAL
     amounts = re.findall(r"\d+\.\d{2}", text)
-
     if amounts:
         data["total"] = max([float(x) for x in amounts])
 
-    inv = re.search(r"(invoice|inv)\s*#?\s*(\w+)", text)
+    # INVOICE
+    inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
     if inv:
         data["invoice"] = inv.group(2)
+
+    # CLIENT (línea válida)
+    lines = text.split("\n")
+    for line in lines[:10]:
+        line = line.strip()
+        if len(line) > 4 and len(line) < 40:
+            if not any(x in line for x in ["invoice","total","date"]):
+                data["client"] = line.title()
+                break
 
     return data
 
@@ -101,39 +154,46 @@ def totals():
 
     profit = income - expenses
 
-    return income, expenses, profit, profit*12
+    return income, expenses, profit, profit * 12
 
 # ---------------------------
-# PROCESS
+# PROCESS FILE
 # ---------------------------
 
 @app.route("/process-file", methods=["POST"])
 def process_file():
 
-    file = request.files.get("file")
+    try:
+        file = request.files.get("file")
 
-    if not file:
-        return jsonify({"error": "no file"}), 400
+        if not file:
+            return jsonify({"error": "no file"}), 400
 
-    text = file.read().decode("utf-8", errors="ignore").lower()
+        filename = file.filename.lower()
 
-    data = extract_data(text)
+        text = read_file(file, filename)
 
-    if data["total"] == 0:
+        data = extract_data(text)
+
+        if data["total"] == 0:
+            return jsonify(dict(zip(
+                ["income","expenses","profit","annual"],
+                totals()
+            )))
+
+        if "deposit" in text or "payment" in text:
+            save(data, "Income")
+        else:
+            save(data, "Expense")
+
         return jsonify(dict(zip(
             ["income","expenses","profit","annual"],
             totals()
         )))
 
-    if "deposit" in text:
-        save(data, "Income")
-    else:
-        save(data, "Expense")
-
-    return jsonify(dict(zip(
-        ["income","expenses","profit","annual"],
-        totals()
-    )))
+    except Exception as e:
+        print("ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
 
 # ---------------------------
 # HOME
