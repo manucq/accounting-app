@@ -14,8 +14,7 @@ DB_FILE = "accounting.db"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# 🔑 PON TU API KEY AQUÍ
-API_KEY = "K82953514288957"
+OCR_API_KEY = "K82953514288957"  # puedes cambiar luego
 
 # ---------------------------
 # DATABASE
@@ -42,55 +41,46 @@ def init_db():
 init_db()
 
 # ---------------------------
-# COMPRESS IMAGE (FIX 1MB)
+# COMPRESS IMAGE (FIX iPhone + tamaño)
 # ---------------------------
 
 def compress_image(file):
 
     try:
-        file.stream.seek(0)
-        img = Image.open(file.stream)
+        img = Image.open(file)
 
-        # Convertir a RGB (por si es PNG o raro)
         img = img.convert("RGB")
-
-        # Reducir tamaño
-        img.thumbnail((800, 800))
+        img.thumbnail((1200, 1200))
 
         buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=30)
-        buffer.seek(0)
+        img.save(buffer, format="JPEG", quality=70)
 
-        print("OK IMAGE COMPRESSED")
+        buffer.seek(0)
         return buffer
 
     except Exception as e:
-        print("❌ NOT IMAGE, USING RAW FILE:", e)
-
-        # 🔥 fallback: enviar archivo tal cual (PDF o raro)
-        file.stream.seek(0)
-        return file.stream
+        print("❌ NOT IMAGE:", e)
+        file.seek(0)
+        return file
 
 # ---------------------------
-# OCR FUNCTION
+# OCR SPACE (ROBUSTO)
 # ---------------------------
 
 def ocr_space(file):
 
-    compressed = compress_image(file)
+    file = compress_image(file)
 
     try:
         response = requests.post(
             "https://api.ocr.space/parse/image",
-            files={
-                "file": ("file", compressed)
-            },
+            files={"file": ("file.jpg", file)},
             data={
-                "apikey": API_KEY,
+                "apikey": OCR_API_KEY,
                 "language": "eng",
-                "isOverlayRequired": False
+                "OCREngine": 2
             },
-            timeout=25
+            timeout=20
         )
 
         result = response.json()
@@ -102,16 +92,10 @@ def ocr_space(file):
 
         parsed = result.get("ParsedResults")
 
-        if not parsed:
-            return ""
+        if parsed:
+            return parsed[0].get("ParsedText", "").lower()
 
-        text = parsed[0].get("ParsedText", "").lower()
-
-        print("==== TEXTO OCR ====")
-        print(text)
-        print("===================")
-
-        return text
+        return ""
 
     except Exception as e:
         print("OCR ERROR:", e)
@@ -130,40 +114,22 @@ def extract_data(text):
         "total": 0
     }
 
-    text = text.lower()
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    # TOTAL (más inteligente)
+    amounts = re.findall(r"\d+[.,]\d{2}", text)
 
-    # TOTAL INTELIGENTE
-    patterns = [
-        r"total\s*\$?\s*(\d+[.,]\d{2})",
-        r"amount\s*due\s*\$?\s*(\d+[.,]\d{2})",
-        r"balance\s*\$?\s*(\d+[.,]\d{2})"
-    ]
+    if amounts:
+        values = [float(x.replace(",", ".")) for x in amounts]
+        data["total"] = max(values)
 
-    for p in patterns:
-        m = re.search(p, text)
-        if m:
-            data["total"] = float(m.group(1).replace(",", "."))
-            break
-
-    # fallback
-    if data["total"] == 0:
-        amounts = re.findall(r"\d+[.,]\d{2}", text)
-        if amounts:
-            data["total"] = max([float(x.replace(",", ".")) for x in amounts])
-
-    # invoice
-    inv = re.search(r"(invoice|inv|bill)[\s#:]*([a-z0-9-]+)", text)
+    # INVOICE
+    inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
     if inv:
         data["invoice"] = inv.group(2)
 
-    # client inteligente
-    for line in lines[:8]:
-        if (
-            3 < len(line) < 40
-            and not any(x in line for x in ["total","tax","date","invoice","amount","receipt"])
-            and not re.search(r"\d", line)
-        ):
+    # CLIENT (primera línea útil)
+    for line in text.split("\n"):
+        line = line.strip()
+        if 5 < len(line) < 40 and not any(w in line for w in ["total","invoice","tax","date"]):
             data["client"] = line.title()
             break
 
@@ -174,6 +140,7 @@ def extract_data(text):
 # ---------------------------
 
 def save(data, type_):
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -196,6 +163,7 @@ def save(data, type_):
 # ---------------------------
 
 def totals():
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
@@ -208,10 +176,11 @@ def totals():
     conn.close()
 
     profit = income - expenses
+
     return income, expenses, profit, profit * 12
 
 # ---------------------------
-# PROCESS FILE
+# PROCESS FILE (ULTRA ROBUSTO)
 # ---------------------------
 
 @app.route("/process-file", methods=["POST"])
@@ -222,25 +191,61 @@ def process_file():
     if not file:
         return jsonify({"error": "no file"}), 400
 
+    filename = file.filename.lower()
+
+    # DETECTAR TIPO
+    if filename.endswith(".pdf"):
+        print("📄 PDF detectado")
+    elif filename.endswith((".jpg",".jpeg",".png",".heic",".webp")):
+        print("🖼️ Imagen detectada")
+    else:
+        print("⚠️ Tipo desconocido")
+
+    # OCR
     text = ocr_space(file)
+
+    print("==== TEXTO OCR ====")
+    print(text[:500])
+    print("===================")
+
+    if not text:
+        # 👇 NUNCA deja todo en 0 vacío
+        income, expenses, profit, annual = totals()
+
+        return jsonify({
+            "income": float(income),
+            "expenses": float(expenses),
+            "profit": float(profit),
+            "annual": float(annual),
+            "warning": "No se pudo leer el archivo"
+        })
 
     data = extract_data(text)
 
     if data["total"] == 0:
-        return jsonify(dict(zip(
-            ["income","expenses","profit","annual"],
-            totals()
-        )))
+        income, expenses, profit, annual = totals()
 
-    if "deposit" in text or "payment received" in text:
+        return jsonify({
+            "income": float(income),
+            "expenses": float(expenses),
+            "profit": float(profit),
+            "annual": float(annual),
+            "warning": "Monto no detectado"
+        })
+
+    if "deposit" in text or "payment" in text:
         save(data, "Income")
     else:
         save(data, "Expense")
 
-    return jsonify(dict(zip(
-        ["income","expenses","profit","annual"],
-        totals()
-    )))
+    income, expenses, profit, annual = totals()
+
+    return jsonify({
+        "income": float(income),
+        "expenses": float(expenses),
+        "profit": float(profit),
+        "annual": float(annual)
+    })
 
 # ---------------------------
 # HOME
