@@ -1,6 +1,6 @@
-from flask import Flask, request, jsonify, send_from_directory
-import os
+from flask import Flask, request, jsonify, render_template, redirect, session
 import sqlite3
+import os
 import re
 from datetime import datetime
 import requests
@@ -8,31 +8,35 @@ from PIL import Image
 import io
 
 app = Flask(__name__)
+app.secret_key = "supersecretkey"
 
-UPLOAD_FOLDER = "uploads"
-DB_FILE = "accounting.db"
+DB = "accounting.db"
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-OCR_API_KEY = "helloworld"
-
-# ---------------------------
-# DATABASE
-# ---------------------------
+# -------------------------
+# DATABASE INIT
+# -------------------------
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB)
     c = conn.cursor()
 
     c.execute("""
-        CREATE TABLE IF NOT EXISTS records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            type TEXT,
-            client TEXT,
-            invoice TEXT,
-            total REAL
-        )
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
+        password TEXT
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        date TEXT,
+        type TEXT,
+        client TEXT,
+        total REAL
+    )
     """)
 
     conn.commit()
@@ -40,9 +44,9 @@ def init_db():
 
 init_db()
 
-# ---------------------------
-# COMPRESS IMAGE
-# ---------------------------
+# -------------------------
+# OCR
+# -------------------------
 
 def compress_image(file):
     try:
@@ -53,185 +57,160 @@ def compress_image(file):
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=70)
         buffer.seek(0)
-
         return buffer
     except:
         file.seek(0)
         return file
 
-# ---------------------------
-# OCR FUNCTION
-# ---------------------------
-
 def ocr_space(file):
-
     file = compress_image(file)
 
     try:
-        response = requests.post(
+        r = requests.post(
             "https://api.ocr.space/parse/image",
             files={"file": ("file.jpg", file)},
-            data={
-                "apikey": OCR_API_KEY,
-                "language": "eng",
-                "OCREngine": 2
-            },
+            data={"apikey": "helloworld"},
             timeout=15
         )
+        res = r.json()
 
-        result = response.json()
-
-        if result.get("IsErroredOnProcessing"):
+        if res.get("IsErroredOnProcessing"):
             return ""
 
-        parsed = result.get("ParsedResults")
-
-        if parsed:
-            return parsed[0].get("ParsedText", "").lower()
-
-        return ""
+        return res["ParsedResults"][0]["ParsedText"].lower()
 
     except:
         return ""
 
-# ---------------------------
-# EXTRACT DATA
-# ---------------------------
+# -------------------------
+# EXTRACT
+# -------------------------
 
-def extract_data(text):
-
-    data = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "client": "Unknown",
-        "invoice": "",
-        "total": 0
-    }
-
+def extract_total(text):
     amounts = re.findall(r"\d+[.,]\d{2}", text)
-
     if amounts:
-        values = [float(x.replace(",", ".")) for x in amounts]
-        data["total"] = max(values)
+        return max([float(x.replace(",", ".")) for x in amounts])
+    return 0
 
-    inv = re.search(r"(invoice|inv|bill)\s*#?\s*(\w+)", text)
-    if inv:
-        data["invoice"] = inv.group(2)
+# -------------------------
+# AUTH
+# -------------------------
 
-    for line in text.split("\n"):
-        line = line.strip()
-        if 5 < len(line) < 40 and not any(w in line for w in ["total","invoice","tax","date"]):
-            data["client"] = line.title()
-            break
+@app.route("/", methods=["GET", "POST"])
+def login():
 
-    return data
+    if request.method == "POST":
+        user = request.form["username"]
+        pw = request.form["password"]
 
-# ---------------------------
-# SAVE DATA
-# ---------------------------
+        conn = sqlite3.connect(DB)
+        c = conn.cursor()
 
-def save(data, type_):
+        c.execute("SELECT * FROM users WHERE username=? AND password=?", (user, pw))
+        u = c.fetchone()
 
-    conn = sqlite3.connect(DB_FILE)
+        if u:
+            session["user_id"] = u[0]
+            return redirect("/dashboard")
+        else:
+            return "Login failed"
+
+    return render_template("login.html")
+
+@app.route("/register", methods=["POST"])
+def register():
+    user = request.form["username"]
+    pw = request.form["password"]
+
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+
+    c.execute("INSERT INTO users (username,password) VALUES (?,?)", (user,pw))
+    conn.commit()
+    conn.close()
+
+    return redirect("/")
+
+# -------------------------
+# DASHBOARD
+# -------------------------
+
+@app.route("/dashboard")
+def dashboard():
+    if "user_id" not in session:
+        return redirect("/")
+
+    return render_template("dashboard.html")
+
+# -------------------------
+# PROCESS FILE
+# -------------------------
+
+@app.route("/process-file", methods=["POST"])
+def process_file():
+
+    if "user_id" not in session:
+        return jsonify({"error": "not logged"}), 403
+
+    file = request.files.get("file")
+
+    text = ocr_space(file)
+
+    total = extract_total(text)
+
+    if total == 0:
+        return jsonify(get_totals(session["user_id"]))
+
+    tipo = "Income" if "deposit" in text else "Expense"
+
+    conn = sqlite3.connect(DB)
     c = conn.cursor()
 
     c.execute("""
-        INSERT INTO records (date, type, client, invoice, total)
-        VALUES (?, ?, ?, ?, ?)
+    INSERT INTO records (user_id,date,type,client,total)
+    VALUES (?,?,?,?,?)
     """, (
-        data["date"],
-        type_,
-        data["client"],
-        data["invoice"],
-        data["total"]
+        session["user_id"],
+        datetime.now().strftime("%Y-%m-%d"),
+        tipo,
+        "Auto",
+        total
     ))
 
     conn.commit()
     conn.close()
 
-# ---------------------------
+    return jsonify(get_totals(session["user_id"]))
+
+# -------------------------
 # TOTALS
-# ---------------------------
+# -------------------------
 
-def totals():
+def get_totals(user_id):
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB)
     c = conn.cursor()
 
-    c.execute("SELECT SUM(total) FROM records WHERE type='Income'")
+    c.execute("SELECT SUM(total) FROM records WHERE user_id=? AND type='Income'", (user_id,))
     income = c.fetchone()[0] or 0
 
-    c.execute("SELECT SUM(total) FROM records WHERE type='Expense'")
+    c.execute("SELECT SUM(total) FROM records WHERE user_id=? AND type='Expense'", (user_id,))
     expenses = c.fetchone()[0] or 0
 
     conn.close()
 
     profit = income - expenses
 
-    return income, expenses, profit, profit * 12
-
-# ---------------------------
-# PROCESS FILE
-# ---------------------------
-
-@app.route("/process-file", methods=["POST"])
-def process_file():
-
-    file = request.files.get("file")
-
-    if not file:
-        return jsonify({"error": "no file"}), 400
-
-    text = ocr_space(file)
-
-    if not text:
-        income, expenses, profit, annual = totals()
-
-        return jsonify({
-            "income": income,
-            "expenses": expenses,
-            "profit": profit,
-            "annual": annual,
-            "warning": "No se pudo leer archivo"
-        })
-
-    data = extract_data(text)
-
-    if data["total"] == 0:
-        income, expenses, profit, annual = totals()
-
-        return jsonify({
-            "income": income,
-            "expenses": expenses,
-            "profit": profit,
-            "annual": annual,
-            "warning": "Monto no detectado"
-        })
-
-    if "deposit" in text or "payment" in text:
-        save(data, "Income")
-    else:
-        save(data, "Expense")
-
-    income, expenses, profit, annual = totals()
-
-    return jsonify({
+    return {
         "income": income,
         "expenses": expenses,
         "profit": profit,
-        "annual": annual
-    })
+        "annual": profit * 12
+    }
 
-# ---------------------------
-# HOME
-# ---------------------------
-
-@app.route("/")
-def home():
-    return send_from_directory(".", "index.html")
-
-# ---------------------------
+# -------------------------
 # RUN
-# ---------------------------
+# -------------------------
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run()
